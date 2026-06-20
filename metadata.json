@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Naas Advc1 Marketing UI",
+  "description": "A sleek marketing landing page template optimized for lead generation and digital campaigns using the Naas framework.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
