@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Advance Approval - Minimal Invoice</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        body { 
+            background-color: #f3f4f6; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+        }
+        .app-container {
+            width: 100%;
+            max-width: 420px;
+            min-height: 100vh;
+            margin: 0 auto;
+            background-color: #F5F5F7;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        
+        /* Popup Animations for Theme 3 */
+        .fade-layer { opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .fade-layer.active { opacity: 1; pointer-events: auto; }
+        .t3-popup { transform: scale(0.8) translateY(-20px); transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .fade-layer.active .t3-popup { transform: scale(1) translateY(0); }
+    </style>
+</head>
+<body>
+
+    <div class="app-container hide-scroll relative overflow-x-hidden">
+        
+        <div id="view-initial-loading" class="flex flex-col items-center justify-center h-screen w-full absolute inset-0 z-50 bg-[#F5F5F7]">
+            <div class="w-10 h-10 border-4 border-gray-200 rounded-full border-t-[#1C1C1E] animate-spin mb-4"></div>
+            <h3 class="font-bold text-gray-500">กำลังเชื่อมต่อระบบ...</h3>
+        </div>
+
+        <div id="main-content" class="hidden flex-col flex-1">
+            <div class="px-6 py-8">
+                <div class="flex justify-between items-center mb-8">
+                    <button onclick="closeLiffApp()" class="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg></button>
+                    <span id="display-doc-id" class="bg-white px-4 py-1.5 rounded-full text-sm font-bold shadow-sm tracking-widest text-gray-800">ADV-XXXX</span>
+                    <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-lg">📄</div>
+                </div>
+
+                <div class="flex justify-between mb-8 border-b border-gray-200 pb-6">
+                    <div><div class="text-[10px] text-gray-400 font-bold uppercase mb-1">Requester</div><div id="display-requester" class="font-bold text-sm text-gray-800">โหลดข้อมูล...</div></div>
+                    <div class="text-right"><div class="text-[10px] text-gray-400 font-bold uppercase mb-1">Project</div><div id="display-project" class="font-bold text-sm text-gray-800">-</div></div>
+                </div>
+
+                <div class="flex text-[10px] text-gray-400 font-bold uppercase mb-3 px-1"><span class="flex-1">Description</span><span class="w-24 text-right">Amount</span></div>
+                <div class="flex justify-between font-medium text-sm mb-4 px-1 pb-4 border-b border-gray-200">
+                    <span id="display-description" class="flex-1 text-gray-600 pr-4">รายการเบิกจ่ายสำรอง</span>
+                    <span id="display-amount-small" class="w-24 text-right text-gray-800">฿0.00</span>
+                </div>
+
+                <div class="flex justify-between items-center px-1 mt-6">
+                    <span class="text-xs text-gray-400 font-bold uppercase">Account</span>
+                    <div class="flex items-center gap-2">
+                        <span id="display-account" class="text-xs font-bold text-gray-600">---</span>
+                        <button onclick="copyAccount()" class="text-gray-400 hover:text-gray-800 active:scale-90 transition-transform cursor-pointer"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-auto w-full bg-white rounded-t-[32px] p-6 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] flex flex-col z-20 min-h-[300px]">
+                <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
+                
+                <div class="flex justify-between items-start mb-4">
+                    <h2 class="text-xl font-bold text-gray-900">Total Request</h2>
+                    <span id="badge-status" class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold">กำลังโหลด...</span>
+                </div>
+                
+                <div class="text-4xl font-black tracking-tighter mb-8 text-gray-900 flex items-start gap-1" id="display-amount-large">
+                    <span class="text-2xl mt-1 text-gray-400">฿</span>0<span class="text-lg mt-3 text-gray-400">.00</span>
+                </div>
+
+                <div id="view-action" class="hidden flex-col w-full gap-3">
+                    <button onclick="handleAction('approved')" class="w-full bg-[#1C1C1E] text-white font-semibold py-4 rounded-full shadow-lg active:scale-95 transition-transform cursor-pointer">Approve & Pay</button>
+                    <button onclick="handleAction('rejected')" class="w-full bg-gray-100 text-gray-600 font-semibold py-4 rounded-full active:scale-95 transition-transform cursor-pointer">Reject</button>
+                </div>
+
+                <div id="view-upload" class="hidden flex-col w-full gap-4">
+                    <div class="w-full border-2 border-dashed border-gray-200 rounded-2xl p-4 flex flex-col items-center justify-center relative min-h-[140px] bg-gray-50">
+                        <input type="file" accept="image/*" id="slip-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="previewSlip(event)">
+                        <div id="upload-placeholder" class="text-center text-sm font-semibold text-gray-500 flex flex-col items-center gap-2">
+                            <span class="text-2xl">📸</span> Tap to upload slip
+                        </div>
+                        <div id="preview-container" class="hidden w-full h-full relative z-0 flex flex-col items-center justify-center">
+                            <img id="slip-preview" class="max-h-32 object-contain rounded-lg shadow-sm" />
+                        </div>
+                    </div>
+                    <button id="btn-submit-upload" onclick="handleUpload()" class="w-full bg-[#1C1C1E] disabled:opacity-30 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-full active:scale-95 transition-transform cursor-pointer" disabled>Confirm Transfer</button>
+                </div>
+
+                <div id="view-loading" class="hidden flex-col items-center justify-center py-6 w-full">
+                    <div class="w-10 h-10 border-4 border-gray-200 rounded-full border-t-[#1C1C1E] animate-spin mb-4"></div>
+                    <h3 class="font-bold text-gray-400 text-sm">Processing...</h3>
+                </div>
+
+                <div id="view-receipt" class="hidden flex-col w-full relative z-10 py-2">
+                    <div class="bg-[#fafafa] rounded-sm shadow-sm relative border border-gray-200 p-5 w-full mx-auto">
+                        <div class="absolute -top-1.5 left-0 w-full overflow-hidden leading-[0]"><svg viewBox="0 0 100 10" preserveAspectRatio="none" class="w-full h-2 text-[#fafafa] fill-current"><polygon points="0,10 5,0 10,10 15,0 20,10 25,0 30,10 35,0 40,10 45,0 50,10 55,0 60,10 65,0 70,10 75,0 80,10 85,0 90,10 95,0 100,10"/></svg></div>
+                        <div class="text-center mb-4"><h2 class="text-lg font-mono font-black uppercase tracking-widest text-gray-900">RECEIPT</h2></div>
+                        <div class="border-y border-dashed border-gray-300 py-3 mb-3 font-mono text-xs text-gray-600 space-y-2">
+                            <div class="flex justify-between"><span>DATE:</span><span id="receipt-date" class="font-medium text-gray-900">--/--/----</span></div>
+                            <div class="flex justify-between"><span>DOC NO:</span><span id="receipt-doc" class="font-medium text-gray-900">---</span></div>
+                        </div>
+                        <div class="border-b border-dashed border-gray-300 pb-4 mb-4 font-mono">
+                            <div class="flex justify-between items-center"><span class="font-bold text-gray-800 text-sm">TOTAL</span><span id="receipt-amount" class="font-black text-gray-900 text-lg">฿0.00</span></div>
+                        </div>
+                        <div class="flex flex-col items-center justify-center">
+                            <div class="flex h-6 w-4/5 justify-center opacity-80 mb-2"><div class="w-1 bg-gray-900 mr-[2px]"></div><div class="w-2 bg-gray-900 mr-[1px]"></div><div class="w-1 bg-gray-900 mr-[3px]"></div><div class="w-3 bg-gray-900 mr-[2px]"></div><div class="w-1 bg-gray-900 mr-[1px]"></div><div class="w-2 bg-gray-900 mr-[2px]"></div><div class="w-1 bg-gray-900 mr-[2px]"></div><div class="w-2 bg-gray-900 mr-[1px]"></div></div>
+                        </div>
+                        <div class="absolute -bottom-1.5 left-0 w-full overflow-hidden leading-[0] rotate-180"><svg viewBox="0 0 100 10" preserveAspectRatio="none" class="w-full h-2 text-[#fafafa] fill-current"><polygon points="0,10 5,0 10,10 15,0 20,10 25,0 30,10 35,0 40,10 45,0 50,10 55,0 60,10 65,0 70,10 75,0 80,10 85,0 90,10 95,0 100,10"/></svg></div>
+                    </div>
+                    <button onclick="closeLiffApp()" class="w-full bg-[#1C1C1E] text-white font-bold py-3.5 rounded-full mt-5 active:scale-95 transition-transform cursor-pointer">Close & Back</button>
+                </div>
+
+                <div id="view-end" class="hidden flex-col items-center justify-center text-center mt-auto mb-auto bg-gray-50 p-6 rounded-3xl w-full border border-gray-100">
+                    <div id="end-icon" class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 mb-4 text-3xl mx-auto"></div>
+                    <h3 id="end-title" class="text-xl font-bold text-gray-800 mb-2"></h3>
+                    <p id="end-desc" class="text-sm text-gray-500 mb-6"></p>
+                    <button onclick="closeLiffApp()" class="w-full bg-gray-900 text-white font-bold py-3.5 rounded-full shadow-md active:scale-95 transition-transform cursor-pointer">Close Window</button>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="prominent-popup" class="fade-layer absolute inset-0 bg-indigo-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+            <div id="popup-card" class="t3-popup bg-white rounded-[32px] p-8 text-center shadow-[0_20px_50px_rgba(0,0,0,0.3)] w-full text-gray-900">
+                <div id="popup-icon" class="text-6xl mb-4 animate-bounce"></div>
+                <h3 id="popup-title" class="text-2xl font-black mb-2 text-transparent bg-clip-text"></h3>
+                <p id="popup-desc" class="text-sm text-gray-500 font-medium mb-8"></p>
+                <button id="popup-btn" class="w-full text-white font-black py-4 rounded-full shadow-lg hover:shadow-xl transition-all active:scale-95"></button>
+            </div>
+        </div>
+
+        <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm font-bold transition-all duration-300 opacity-0 pointer-events-none z-[200] flex items-center gap-2 transform -translate-y-4 whitespace-nowrap">
+            <span>📋</span> คัดลอกบัญชีเรียบร้อยแล้ว!
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+        // ==========================================
+        // ⚠️ Configuration
+        // ==========================================
+        const LIFF_ID = "YOUR_LIFF_ID"; 
+        
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com"
+        };
+        
+        const COLLECTION_NAME = "advance_requests";
+        // ==========================================
+
+        let transactionId = null;
+        let lineUserId = null;
+        let lineUserName = null;
+        let rawAccountNo = "";
+        let transactionData = null;
+
+        // Determine if we should use the Direct Backend API or fall back to Direct Firebase Integration
+        // If we are hosted on the same origin, we use the secure API endpoint of this app!
+        const useBackendAPI = window.location.origin === "https://ais-dev-l2yrslhsiwp6phbg7gjjwg-230368814102.asia-east1.run.app" || 
+                             window.location.origin === "https://ais-pre-l2yrslhsiwp6phbg7gjjwg-230368814102.asia-east1.run.app" ||
+                             window.location.hostname === "localhost" ||
+                             window.location.hostname === "127.0.0.1" ||
+                             window.location.hostname.endsWith(".run.app"); // dynamically matches any Cloud Run domain
+
+        let db = null;
+        let storage = null;
+        let auth = null;
+
+        async function initializeAppFlow() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                transactionId = urlParams.get('id');
+                
+                if (!transactionId) {
+                    showEndView('error', 'ไม่พบรหัสอ้างอิง', 'กรุณาเข้าสู่ระบบผ่านแอปพลิเคชัน LINE หรือสแกน QR Code รายการเบิกเงิน');
+                    return;
+                }
+
+                document.getElementById('display-doc-id').innerText = transactionId;
+                document.getElementById('receipt-doc').innerText = transactionId;
+
+                // 1. Initialize LIFF
+                try {
+                    await liff.init({ liffId: LIFF_ID });
+                    if (!liff.isLoggedIn()) {
+                        liff.login();
+                        return;
+                    }
+
+                    const profile = await liff.getProfile();
+                    lineUserId = profile.userId;
+                    lineUserName = profile.displayName;
+                } catch (liffError) {
+                    console.warn("LIFF Initialization failed. Operating in standalone sandbox mode.", liffError);
+                    // Standard fallback for development/sandbox testing
+                    lineUserId = "U_SANDBOX_MOCK_USER";
+                    lineUserName = "ทดสอบ LINE User";
+                }
+
+                // 2. Load data
+                if (useBackendAPI) {
+                    console.log("⚡ Operating in secure Full-Stack API mode via Express");
+                    await fetchTransactionDataFromAPI();
+                } else {
+                    console.log("🔥 Operating in Direct Firebase client mode");
+                    // Initialize Firebase directly
+                    const firebaseApp = initializeApp(firebaseConfig);
+                    auth = getAuth(firebaseApp);
+                    db = getFirestore(firebaseApp);
+                    storage = getStorage(firebaseApp);
+
+                    await signInAnonymously(auth);
+                    await fetchTransactionDataFromFirebase();
+                }
+
+            } catch (error) {
+                console.error("Initialization Error:", error);
+                showEndView('error', 'ระบบขัดข้อง', 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง');
+            }
+        }
+
+        async function fetchTransactionDataFromAPI() {
+            try {
+                const res = await fetch(`/api/liff/advance/${transactionId}`);
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    showEndView('error', 'ไม่พบข้อมูล', errData.message || `ไม่พบรายการเบิกจ่ายรหัส ${transactionId}`);
+                    return;
+                }
+
+                transactionData = await res.json();
+                renderDataToUI(transactionData);
+                evaluateState(transactionData.status);
+
+                document.getElementById('view-initial-loading').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                document.getElementById('main-content').classList.add('flex');
+            } catch (error) {
+                console.error("API Fetch Error:", error);
+                showEndView('error', 'ข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลจาก Server ได้');
+            }
+        }
+
+        async function fetchTransactionDataFromFirebase() {
+            try {
+                const docRef = doc(db, COLLECTION_NAME, transactionId);
+                const docSnap = await getDoc(docRef);
+
+                if (!docSnap.exists()) {
+                    showEndView('error', 'ไม่พบข้อมูล', `ไม่พบรายการเบิกจ่ายรหัส ${transactionId}`);
+                    return;
+                }
+
+                const rawData = docSnap.data();
+                // Normalize firebase document layout to match our expected visual schema
+                transactionData = {
+                    id: transactionId,
+                    status: rawData.status || 'pending',
+                    amount: rawData.amount || 0,
+                    empName: rawData.requester_name || 'ไม่ระบุชื่อ',
+                    pName: rawData.project_name || '-',
+                    desc: rawData.description || 'รายการเบิกจ่าย',
+                    payeeBank: rawData.bank_name || 'BANK',
+                    payeeBankNo: rawData.bank_account || '',
+                    slip_url: rawData.slip_url || ''
+                };
+
+                renderDataToUI(transactionData);
+                evaluateState(transactionData.status);
+
+                document.getElementById('view-initial-loading').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                document.getElementById('main-content').classList.add('flex');
+
+            } catch (error) {
+                console.error("Firebase Fetch Error:", error);
+                showEndView('error', 'ข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลจากฐานข้อมูล Firebase ได้');
+            }
+        }
+
+        function renderDataToUI(data) {
+            const amount = data.amount || 0;
+            const formattedAmount = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+            const [intPart, decimalPart] = formattedAmount.split('.');
+            
+            // Amount Displays
+            document.getElementById('display-amount-small').innerText = `฿${formattedAmount}`;
+            document.getElementById('display-amount-large').innerHTML = `<span class="text-2xl mt-1 text-gray-400">฿</span>${intPart}<span class="text-lg mt-3 text-gray-400">.${decimalPart}</span>`;
+            document.getElementById('receipt-amount').innerText = `฿${formattedAmount}`;
+
+            // Text Displays
+            document.getElementById('display-requester').innerText = data.empName || data.requester_name || "ไม่ระบุชื่อ";
+            document.getElementById('display-project').innerText = data.pName || data.project_name || "-";
+            document.getElementById('display-description').innerText = data.desc || data.description || "รายการเบิกจ่าย";
+            
+            // Account Display
+            const bankName = data.payeeBank || data.bank_name || "BANK";
+            rawAccountNo = data.payeeBankNo || data.bank_account || "";
+            const formattedAcc = rawAccountNo ? rawAccountNo.replace(/(\d{3})(\d{1})(\d{5})(\d{1})/, "$1-$2-$3-$4") : "---";
+            document.getElementById('display-account').innerText = `${bankName} ${formattedAcc}`;
+
+            const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+            document.getElementById('receipt-date').innerText = today;
+        }
+
+        function evaluateState(status) {
+            // Support both internal standard uppercase statuses and LIFF lowercase statuses
+            const s = String(status).toLowerCase();
+            if (s === 'pending' || s === 'pending_approval' || s === 'รออนุมัติ') {
+                updateBadge('Pending Approval', 'bg-orange-100 text-orange-600');
+                switchView('view-action');
+            } else if (s === 'approved' || s === 'waiting_transfer' || s === 'รอโอน') {
+                updateBadge('Waiting Slip', 'bg-blue-100 text-blue-600');
+                switchView('view-upload');
+            } else if (s === 'rejected' || s === 'ไม่อนุมัติ') {
+                updateBadge('Rejected', 'bg-red-100 text-red-600');
+                showEndView('error', 'รายการถูกไม่อนุมัติ', 'รายการเบิกเงินนี้ได้รับการปฏิเสธคำขอเรียบร้อยแล้ว');
+            } else if (s === 'completed' || s === 'closed' || s === 'ปิดยอด') {
+                updateBadge('Completed', 'bg-emerald-100 text-emerald-600 border border-emerald-200');
+                switchView('view-receipt');
+            } else {
+                updateBadge('Unknown', 'bg-gray-100 text-gray-600');
+                showEndView('warning', 'สถานะไม่ถูกต้อง', 'ไม่พบสถานะเบิกจ่ายที่รองรับในฐานข้อมูล');
+            }
+        }
+
+        window.handleAction = async function(actionType) {
+            switchView('view-loading');
+            
+            if (useBackendAPI) {
+                try {
+                    const res = await fetch(`/api/liff/advance/${transactionId}/action`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lineUserId: lineUserId,
+                            lineUserName: lineUserName,
+                            action: actionType
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) {
+                        throw new Error(data.message || 'บันทึกรายการไม่สำเร็จ');
+                    }
+
+                    if (actionType === 'approved') {
+                        showPopup('success', 'Approved', 'อนุมัติเรียบร้อย ระบบกำลังพาคุณไปหน้าแนบหลักฐานสลิปโอนเงิน', () => {
+                            updateBadge('Waiting Slip', 'bg-blue-100 text-blue-600');
+                            switchView('view-upload');
+                        });
+                    } else {
+                        showPopup('error', 'Rejected', 'ปฏิเสธคำขอเบิกเรียบร้อยแล้ว ระบบบันทึกผลเข้าระบบหลักแล้ว', () => {
+                            updateBadge('Rejected', 'bg-red-100 text-red-600');
+                            showEndView('error', 'ปฏิเสธรายการสำเร็จ', 'สามารถปิดหน้าจอนี้เพื่อกลับหน้าห้องแชทได้ทันที');
+                        });
+                    }
+                } catch (error) {
+                    console.error("Action API Error:", error);
+                    showPopup('error', 'Error', error.message || 'เกิดข้อผิดพลาดในการส่งข้อมูลเข้าเซิร์ฟเวอร์', () => switchView('view-action'));
+                }
+            } else {
+                // Direct Firebase Mode
+                try {
+                    const docRef = doc(db, COLLECTION_NAME, transactionId);
+                    await updateDoc(docRef, {
+                        status: actionType,
+                        action_by_id: lineUserId,
+                        action_by_name: lineUserName,
+                        action_timestamp: new Date().toISOString()
+                    });
+
+                    if (actionType === 'approved') {
+                        showPopup('success', 'Approved', 'ระบบกำลังพาคุณไปหน้าแนบสลิป', () => {
+                            updateBadge('Waiting Slip', 'bg-blue-100 text-blue-600');
+                            switchView('view-upload');
+                        });
+                    } else {
+                        showPopup('error', 'Rejected', 'ระบบได้แจ้งเตือนการไม่อนุมัติแล้ว', () => {
+                            updateBadge('Rejected', 'bg-red-100 text-red-600');
+                            showEndView('error', 'ปฏิเสธรายการสำเร็จ', 'สามารถปิดหน้าต่างได้เลย');
+                        });
+                    }
+                } catch (error) {
+                    console.error("Update Status Error:", error);
+                    showPopup('error', 'Error', 'อัปเดตไม่สำเร็จ กรุณาลองใหม่', () => switchView('view-action'));
+                }
+            }
+        };
+
+        window.previewSlip = function(event) {
+            if(event.target.files && event.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('slip-preview').src = e.target.result;
+                    document.getElementById('upload-placeholder').classList.add('hidden');
+                    document.getElementById('preview-container').classList.remove('hidden');
+                    document.getElementById('preview-container').classList.add('flex');
+                    document.getElementById('btn-submit-upload').disabled = false;
+                }
+                reader.readAsDataURL(event.target.files[0]);
+            }
+        };
+
+        window.handleUpload = async function() {
+            const fileInput = document.getElementById('slip-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            switchView('view-loading');
+
+            if (useBackendAPI) {
+                try {
+                    // Convert file to base64 Data URL for API transmission
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        const dataUrl = e.target.result;
+                        try {
+                            const res = await fetch(`/api/liff/advance/${transactionId}/upload-slip`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    lineUserId,
+                                    lineUserName,
+                                    dataUrl,
+                                    fileName: file.name
+                                })
+                            });
+
+                            const data = await res.json();
+                            if (!res.ok) {
+                                throw new Error(data.message || 'อัปโหลดสลิปไม่สำเร็จ');
+                            }
+
+                            showPopup('success', 'Success', 'โอนเงินและอัปโหลดหลักฐานสลิปเข้าระบบเรียบร้อยแล้ว', () => {
+                                updateBadge('Completed', 'bg-emerald-100 text-emerald-600 border border-emerald-200');
+                                switchView('view-receipt');
+                            });
+                        } catch (uploadErr) {
+                            console.error("API Slip Upload Error:", uploadErr);
+                            showPopup('error', 'Upload Failed', uploadErr.message || 'ไม่สามารถบันทึกสลิปได้', () => switchView('view-upload'));
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                } catch (e) {
+                    console.error(e);
+                    showPopup('error', 'Upload Failed', 'เกิดข้อผิดพลาดในการเตรียมไฟล์', () => switchView('view-upload'));
+                }
+            } else {
+                // Direct Firebase Mode
+                try {
+                    const filePath = `advance_slips/${transactionId}_${Date.now()}`;
+                    const storageRef = ref(storage, filePath);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    const downloadUrl = await getDownloadURL(snapshot.ref);
+
+                    const docRef = doc(db, COLLECTION_NAME, transactionId);
+                    await updateDoc(docRef, {
+                        status: 'completed',
+                        slip_url: downloadUrl,
+                        completed_by_name: lineUserName,
+                        completed_timestamp: new Date().toISOString()
+                    });
+
+                    showPopup('success', 'Success', 'แนบสลิปและบันทึกใบเสร็จเรียบร้อย', () => {
+                        updateBadge('Completed', 'bg-emerald-100 text-emerald-600 border border-emerald-200');
+                        switchView('view-receipt');
+                    });
+
+                } catch (error) {
+                    console.error("Upload Error:", error);
+                    showPopup('error', 'Upload Failed', 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์', () => switchView('view-upload'));
+                }
+            }
+        };
+
+        function switchView(viewId) {
+            const views = ['view-action', 'view-upload', 'view-loading', 'view-receipt', 'view-end'];
+            views.forEach(v => {
+                const el = document.getElementById(v);
+                if (el) {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex');
+                }
+            });
+            const activeEl = document.getElementById(viewId);
+            if (activeEl) {
+                activeEl.classList.remove('hidden');
+                activeEl.classList.add('flex');
+            }
+        }
+
+        function updateBadge(text, colorClass) {
+            const badge = document.getElementById('badge-status');
+            if (badge) {
+                badge.innerText = text;
+                badge.className = `px-3 py-1 rounded-full text-xs font-bold ${colorClass}`;
+            }
+        }
+
+        window.copyAccount = function() {
+            if (!rawAccountNo) return;
+            
+            // Standard dynamic clipboard API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(rawAccountNo).then(showToast).catch(fallbackCopy);
+            } else {
+                fallbackCopy();
+            }
+
+            function fallbackCopy() {
+                const el = document.createElement('textarea');
+                el.value = rawAccountNo;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                showToast();
+            }
+
+            function showToast() {
+                const toast = document.getElementById('toast');
+                toast.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
+                setTimeout(() => toast.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4'), 2500);
+            }
+        };
+
+        window.closeLiffApp = function() {
+            try {
+                if (liff && liff.isInClient && liff.isInClient()) {
+                    liff.closeWindow();
+                } else {
+                    alert('การทำงานเสร็จสิ้น (ระบบจะปิดหน้าต่างนี้โดยอัตโนมัติบนแอป LINE)');
+                }
+            } catch (e) {
+                alert('การทำงานเสร็จสิ้น');
+            }
+        };
+
+        function showPopup(type, title, desc, callback) {
+            const popup = document.getElementById('prominent-popup');
+            const card = document.getElementById('popup-card');
+            const icon = document.getElementById('popup-icon');
+            const titleEl = document.getElementById('popup-title');
+            const descEl = document.getElementById('popup-desc');
+            const btn = document.getElementById('popup-btn');
+
+            titleEl.innerText = title;
+            descEl.innerText = desc;
+
+            if (type === 'success') {
+                icon.innerText = "🎉";
+                titleEl.className = "text-2xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500";
+                btn.className = "w-full text-white font-black py-4 rounded-full shadow-lg hover:shadow-xl transition-all active:scale-95 bg-gradient-to-r from-emerald-400 to-teal-500 cursor-pointer";
+                btn.innerText = "ตกลง";
+            } else {
+                icon.innerText = "⚠️";
+                titleEl.className = "text-2xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500";
+                btn.className = "w-full text-white font-black py-4 rounded-full shadow-lg hover:shadow-xl transition-all active:scale-95 bg-gradient-to-r from-red-500 to-orange-500 cursor-pointer";
+                btn.innerText = "รับทราบ";
+            }
+
+            popup.classList.remove('opacity-0', 'pointer-events-none');
+            popup.classList.add('active');
+
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+
+            const hidePopup = () => {
+                popup.classList.add('opacity-0', 'pointer-events-none');
+                popup.classList.remove('active');
+                if (callback) callback();
+            };
+
+            if (type === 'success') {
+                newBtn.style.display = 'none';
+                setTimeout(() => hidePopup(), 2000);
+            } else {
+                newBtn.style.display = 'block';
+                newBtn.onclick = hidePopup;
+            }
+        }
+
+        function showEndView(type, title, desc) {
+            const iconEl = document.getElementById('end-icon');
+            if (type === 'error') {
+                iconEl.innerText = "✕";
+                iconEl.className = "w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4 text-3xl font-bold mx-auto";
+            } else {
+                iconEl.innerText = "!";
+                iconEl.className = "w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-4 text-3xl font-bold mx-auto";
+            }
+            document.getElementById('end-title').innerText = title;
+            document.getElementById('end-desc').innerText = desc;
+            switchView('view-end');
+            
+            document.getElementById('view-initial-loading').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            document.getElementById('main-content').classList.add('flex');
+        }
+
+        window.addEventListener('DOMContentLoaded', initializeAppFlow);
+    </script>
+</body>
+</html>

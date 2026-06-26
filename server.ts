@@ -8,11 +8,11 @@ import bcrypt from 'bcryptjs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import { initializeApp as initializeFirebaseApp, getApps, type FirebaseApp } from 'firebase/app';
-import { doc, getDoc, getFirestore, serverTimestamp, setDoc, terminate, setLogLevel, type Firestore } from 'firebase/firestore';
+import { doc, getDoc, getFirestore, initializeFirestore, serverTimestamp, setDoc, terminate, setLogLevel, type Firestore } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 
 dotenv.config();
-setLogLevel('silent');
+setLogLevel('warn');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -181,9 +181,9 @@ function getFirebaseResources() {
       }
       firebaseResources = {
         app,
-        db: FIREBASE_CONFIG.firestoreDatabaseId 
-          ? getFirestore(app, FIREBASE_CONFIG.firestoreDatabaseId)
-          : getFirestore(app),
+        db: initializeFirestore(app, {
+          experimentalForceLongPolling: true,
+        }, FIREBASE_CONFIG.firestoreDatabaseId || '(default)'),
         storage: storageInstance
       };
     } catch (dbError) {
@@ -946,6 +946,26 @@ app.post('/api/generate-project-code', requireAuth, requirePermission('settings.
     res.json({ code });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to generate project code' });
+  }
+});
+
+app.post('/api/seed-advances', requireAuth, requirePermission('settings.manage'), async (req, res) => {
+  try {
+    const state = await readState();
+    const newAdvances = Array.from({ length: 50 }, (_, i) => ({
+      id: `ADV-${Date.now()}-${i}`,
+      empId: `EMP-${Math.floor(Math.random() * 100)}`,
+      empName: `Employee ${Math.floor(Math.random() * 100)}`,
+      projectName: `Project ${Math.floor(Math.random() * 5)}`,
+      amount: Math.floor(Math.random() * 10000),
+      status: 'Pending',
+      items: [],
+      receipts: []
+    }));
+    await writeState({ ...state, advances: [...(state.advances || []), ...newAdvances] });
+    res.json({ success: true, count: 50 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Seed failed' });
   }
 });
 
@@ -2663,6 +2683,282 @@ app.get('/api/line/user-profile/:userId', async (req, res) => {
   } catch (error: any) {
     console.error('❌ Failed to fetch LINE profile:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint to send a test LINE notification (Flex Message)
+app.post('/api/line/send-test', express.json(), async (req, res) => {
+  const { to, altText, flexContent } = req.body;
+  const config = await readStore<any>('line-messaging-config', null);
+
+  if (!config || !config.channelAccessToken) {
+    return res.status(400).json({ error: 'LINE_CONFIG_MISSING', message: 'ยังไม่ได้ตั้งค่า LINE Messaging API ในเมนูตั้งค่า' });
+  }
+
+  const targetTo = to || config.groupId;
+  if (!targetTo) {
+    return res.status(400).json({ error: 'TARGET_MISSING', message: 'กรุณาระบุ Target Group ID หรือ Recipient ID ในการตั้งค่า LINE' });
+  }
+
+  try {
+    const response = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.channelAccessToken}`
+      },
+      body: JSON.stringify({
+        to: targetTo,
+        messages: [{
+          type: 'flex',
+          altText: altText || 'Flex Message Test',
+          contents: flexContent
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('❌ LINE API send-test error:', response.status, errText);
+      let parsedErr;
+      try { parsedErr = JSON.parse(errText); } catch(e){}
+      return res.status(400).json({ 
+        error: 'LINE_API_ERROR', 
+        message: parsedErr?.message || errText,
+        details: parsedErr
+      });
+    }
+
+    const successData = await response.json();
+    console.log(`💚 LINE Test Message sent to ${targetTo}:`, JSON.stringify(successData));
+    res.json({ success: true, to: targetTo, data: successData });
+  } catch (error: any) {
+    console.error('❌ Failed to send LINE test message:', error);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: error.message });
+  }
+});
+
+// Route to serve the LINE LIFF Approval page
+app.get('/liff/approval', async (req, res) => {
+  try {
+    const htmlPath = path.join(process.cwd(), 'src', 'liff', 'approval.html');
+    if (!fs.existsSync(htmlPath)) {
+      return res.status(404).send('LIFF HTML template not found');
+    }
+
+    let html = fs.readFileSync(htmlPath, 'utf8');
+
+    // 1. Auto-inject Firebase Config from firebase-applet-config.json
+    try {
+      const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(fbConfigPath)) {
+        const fbConfig = JSON.parse(fs.readFileSync(fbConfigPath, 'utf8'));
+        html = html.replace('YOUR_API_KEY', fbConfig.apiKey || '');
+        html = html.replace('YOUR_PROJECT_ID.firebaseapp.com', fbConfig.authDomain || '');
+        html = html.replace('YOUR_PROJECT_ID', fbConfig.projectId || '');
+        html = html.replace('YOUR_PROJECT_ID.appspot.com', fbConfig.storageBucket || '');
+      }
+    } catch (e) {
+      console.error('Failed to auto-inject Firebase config into LIFF:', e);
+    }
+
+    // 2. Auto-inject LIFF ID from line-messaging-config store
+    try {
+      const lineConfig = await readStore<any>('line-messaging-config', null);
+      if (lineConfig && lineConfig.liffId) {
+        html = html.replaceAll('YOUR_LIFF_ID', lineConfig.liffId);
+      }
+    } catch (e) {
+      console.error('Failed to auto-inject LIFF ID:', e);
+    }
+
+    res.header('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (error: any) {
+    console.error('Failed to serve LIFF page:', error);
+    res.status(500).send(`Server Error: ${error.message}`);
+  }
+});
+
+// Endpoint to fetch advance details for LIFF
+app.get('/api/liff/advance/:id', async (req, res) => {
+  try {
+    const state = await readState();
+    const advances = state.advances || [];
+    const advance = advances.find((a: any) => a.id === req.params.id);
+    if (!advance) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'ไม่พบรายการเบิกจ่ายนี้' });
+    }
+    
+    // Map status for LIFF
+    let liffStatus = 'pending';
+    if (advance.status === 'WAITING_TRANSFER' || advance.status === 'รอโอน') {
+      liffStatus = 'approved';
+    } else if (advance.status === 'REJECTED' || advance.status === 'ไม่อนุมัติ') {
+      liffStatus = 'rejected';
+    } else if (advance.status === 'CLOSED' || advance.status === 'ปิดยอด' || advance.status === 'COMPLETED') {
+      liffStatus = 'completed';
+    }
+
+    res.json({
+      id: advance.id,
+      status: liffStatus,
+      amount: advance.amount || 0,
+      empName: advance.empName || 'ไม่ระบุชื่อ',
+      pName: advance.pName || '-',
+      desc: advance.desc || 'รายการเบิกจ่าย',
+      payeeBank: advance.payeeBank || 'BANK',
+      payeeBankNo: advance.payeeBankNo || '',
+      slip_url: advance.pay?.slipUrl || (advance.files && advance.files[0]?.url) || ''
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+});
+
+// Endpoint to handle approve/reject actions from LIFF
+app.post('/api/liff/advance/:id/action', express.json(), async (req, res) => {
+  try {
+    const { lineUserId, action, reason } = req.body;
+    const advanceId = req.params.id;
+
+    if (!lineUserId) {
+      return res.status(400).json({ error: 'MISSING_USER_ID', message: 'กรุณาระบุ LINE User ID' });
+    }
+
+    if (action === 'approved') {
+      const result = await approveAdvanceFromLine(advanceId, lineUserId);
+      if (!result.success) {
+        return res.status(400).json({ error: 'ACTION_FAILED', message: result.message });
+      }
+      return res.json({ success: true, message: result.message });
+    } else if (action === 'rejected') {
+      const result = await rejectAdvanceFromLine(advanceId, lineUserId, reason || 'ไม่อนุมัติจาก LIFF');
+      if (!result.success) {
+        return res.status(400).json({ error: 'ACTION_FAILED', message: result.message });
+      }
+      return res.json({ success: true, message: result.message });
+    } else {
+      return res.status(400).json({ error: 'INVALID_ACTION', message: 'Action ไม่ถูกต้อง' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+});
+
+// Endpoint to handle slip upload from LIFF
+app.post('/api/liff/advance/:id/upload-slip', express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const advanceId = req.params.id;
+    const { lineUserId, lineUserName, dataUrl, fileName } = req.body;
+
+    if (!dataUrl) {
+      return res.status(400).json({ error: 'MISSING_DATA', message: 'กรุณาอัปโหลดรูปภาพสลิป' });
+    }
+
+    // Decode base64 file using existing decodeUpload helper
+    const { mimeType, buffer } = decodeUpload({ dataUrl });
+    if (buffer.byteLength > 15 * 1024 * 1024) {
+      return res.status(413).json({ error: 'FILE_TOO_LARGE', message: 'รูปภาพสลิปมีขนาดใหญ่เกิน 15MB' });
+    }
+
+    const originalName = safeFileName(fileName || 'slip.jpg');
+    const ext = path.extname(originalName) || fileExtFromMime(mimeType);
+    const id = `FILE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const storedName = `${id}${ext}`;
+    const resources = getFirebaseResources();
+    let storagePath: string | undefined;
+    let fileUrl = `/api/files/${id}/download`;
+
+    // 1. Upload to storage or local file system
+    if (resources && resources.storage) {
+      const candidateStoragePath = `clearadvance/uploads/${storedName}`;
+      try {
+        await withFirebaseTimeout(uploadBytes(ref(resources.storage, candidateStoragePath), buffer, { contentType: mimeType }), 'Firebase Storage upload', 25_000);
+        storagePath = candidateStoragePath;
+      } catch (error) {
+        console.log('ℹ️ Firebase Storage upload failed or timed out, falling back to local disk storage safely');
+        fs.writeFileSync(path.join(UPLOAD_DIR, storedName), buffer);
+      }
+    } else {
+      fs.writeFileSync(path.join(UPLOAD_DIR, storedName), buffer);
+    }
+
+    // 2. Register file record in standard store
+    const fileRecord: StoredFileRecord = {
+      id,
+      fileName: originalName,
+      originalName,
+      storedName,
+      mimeType,
+      size: buffer.byteLength,
+      relatedId: advanceId,
+      relatedType: 'advance',
+      source: 'LIFF Upload',
+      createdAt: new Date().toISOString(),
+      url: fileUrl,
+      isImage: mimeType.startsWith('image/'),
+      storagePath
+    };
+
+    const files = await readStore<StoredFileRecord[]>('files', []);
+    files.push(fileRecord);
+    await writeStore('files', files);
+
+    // 3. Update the advance status in state to CLOSED and link the slip
+    const state = await readState();
+    const advances = state.advances || [];
+    const advance = advances.find((a: any) => a.id === advanceId);
+
+    if (!advance) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'ไม่พบรายการเบิกจ่ายนี้' });
+    }
+
+    const oldStatus = advance.status;
+    advance.status = 'CLOSED'; // set to closed/completed
+    
+    // Create payee/payment record
+    advance.pay = {
+      payDate: new Date().toISOString().substring(0, 10),
+      payBy: lineUserName || 'LINE User',
+      slipFileId: id,
+      slipUrl: fileUrl,
+      note: 'โอนและแนบสลิปผ่าน LINE LIFF'
+    };
+
+    if (!advance.files) {
+      advance.files = [];
+    }
+    advance.files.push({
+      id,
+      name: originalName,
+      url: fileUrl,
+      uploadedAt: new Date().toISOString()
+    });
+
+    // Update document tracking if exists
+    if (advance.trackingRecord) {
+      advance.trackingRecord.status = 'In Progress';
+      if (!advance.trackingRecord.timeline) {
+        advance.trackingRecord.timeline = [];
+      }
+      advance.trackingRecord.timeline.push({
+        date: new Date().toISOString(),
+        action: 'Slip Uploaded via LINE LIFF',
+        status: 'success'
+      });
+    }
+
+    await writeState(state);
+
+    // Log Audit
+    const mockReq = { ip: 'LINE-LIFF', headers: { 'user-agent': 'LineLIFF' } };
+    await logAudit(mockReq as any, 'ATTACH_SLIP', advanceId, 'SUCCESS', { status: oldStatus }, { status: 'CLOSED', fileId: id });
+
+    res.json({ success: true, fileId: id, url: fileUrl });
+  } catch (error: any) {
+    console.error('❌ Failed to handle LIFF slip upload:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
   }
 });
 

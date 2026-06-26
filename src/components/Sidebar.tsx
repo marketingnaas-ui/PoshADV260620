@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { LayoutDashboard, Database, List, PlusCircle, CheckSquare, CreditCard, CornerRightDown, FileText, BarChart2, FolderArchive, ChevronLeft, ChevronRight, PieChart, History } from 'lucide-react';
+import { LayoutDashboard, Database, List, PlusCircle, CheckSquare, CreditCard, CornerRightDown, FileText, BarChart2, FolderArchive, ChevronLeft, ChevronRight, PieChart, History, MessageSquare } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SETTINGS_MENU } from '../config/settingsMenu';
 import logoImg from '../assets/images/regenerated_image_1782327208256.png';
@@ -196,6 +196,7 @@ export const Sidebar = () => {
         {hasPerm('accounting') && <NavItem id="clearance-ledger" label="ประวัติสะสมใบเคลียร์" icon={History} />}
         {hasPerm('vault') && <NavItem id="vault" label="Document Vault" icon={FolderArchive} badge={cVault} />}
         {hasPerm('reports') && <NavItem id="reports" label="Reports & Analytics" icon={BarChart2} />}
+        {hasPerm('line-integration') && <NavItem id="flex-simulator" label="Flex Simulator" icon={MessageSquare} />}
         {hasPerm('summaryReport') && <NavItem id="summaryReport" label="Summary Report (TPL3)" icon={FileText} />}
 
         {SETTINGS_MENU.map((group) => {

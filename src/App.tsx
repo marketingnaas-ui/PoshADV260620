@@ -27,6 +27,7 @@ import { DocumentTracking } from './pages/DocumentTracking';
 import { ProjectCostDashboard } from './pages/ProjectCostDashboard';
 import { AuditReportCenter } from './pages/AuditReportCenter';
 import { ClearanceLedger } from './pages/ClearanceLedger';
+import { FlexMessageSimulator } from './pages/FlexMessageSimulator';
 import LoginPage from './pages/Login';
 
 const StaffDirectory = React.lazy(() => import('./pages/SettingsCenter/StaffDirectory'));
@@ -132,6 +133,7 @@ const AppContent = () => {
               {page === 'document-tracking' && <DocumentTracking />}
               {page === 'audit-reports' && <AuditReportCenter />}
               {page === 'clearance-ledger' && <ClearanceLedger />}
+              {page === 'flex-simulator' && <FlexMessageSimulator />}
               {page === 'detail' && <AdvanceDetail />}
               {page === 'vault' && <DocumentVault />}
               {page === 'reports' && <Reports />}

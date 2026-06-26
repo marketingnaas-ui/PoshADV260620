@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 const TITLES: Record<string, [string, string]> = {
@@ -40,6 +40,10 @@ export const Topbar = () => {
     }
   };
 
+  const handleLogout = () => {
+    setCurrentUser(null);
+  };
+
   return (
     <header className="topbar">
       <div className="tb-l">
@@ -56,6 +60,11 @@ export const Topbar = () => {
           <span className="live"></span> {syncStatus === 'saving' ? 'Saving...' : syncStatus === 'error' ? 'Sync error' : 'Saved'}
         </div>
         
+        <button onClick={handleLogout} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-red-600 transition-colors">
+          <LogOut size={14} />
+          <span className="hidden sm:inline">Log Out</span>
+        </button>
+
         {/* User Switcher Dropdown */}
         {(currentUser?.role === 'Administrator' || currentUser?.role === 'Executive') ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '4px 12px', borderRadius: '30px' }}>

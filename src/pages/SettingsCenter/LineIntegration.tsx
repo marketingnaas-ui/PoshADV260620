@@ -19,6 +19,7 @@ interface LineConfig {
   enabled: boolean;
   automationEnabled: boolean;
   status: 'CONNECTED' | 'DISCONNECTED';
+  liffId?: string;
 }
 
 export default function LineIntegration() {
@@ -33,7 +34,8 @@ export default function LineIntegration() {
     groupId: '',
     enabled: true,
     automationEnabled: true,
-    status: 'DISCONNECTED'
+    status: 'DISCONNECTED',
+    liffId: ''
   });
 
   const [savingConfig, setSavingConfig] = useState(false);
@@ -170,6 +172,18 @@ export default function LineIntegration() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755]" 
                 placeholder="วาง Access Token จาก LINE Developers Console..."
               />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">LINE LIFF ID</label>
+              <input 
+                type="text" 
+                value={lineConfig.liffId || ''} 
+                onChange={e => setLineConfig({ ...lineConfig, liffId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755]" 
+                placeholder="เช่น 2001234567-AbCdEfGh"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">ใช้สำหรับการล็อกอินและปิดหน้าต่างอัตโนมัติของหน้าจออนุมัติจ่ายเงินบน LINE LIFF</p>
             </div>
           </div>
         </div>

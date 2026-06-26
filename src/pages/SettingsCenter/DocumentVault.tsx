@@ -139,6 +139,12 @@ export const DocumentVault = () => {
           <p>Centralized corporate repository, OCR archive, and financial ledger vault</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-o btn-sm" onClick={async () => {
+            await fetch('/api/seed-advances', { method: 'POST' });
+            window.location.reload();
+          }}>
+            🧪 Seed Data
+          </button>
           <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/vault-docs.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>
             📁 Export Vault Index
           </button>
