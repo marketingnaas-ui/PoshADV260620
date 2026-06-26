@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
 import { Advance, User, Project, Category } from '../types';
+import { User as GoogleUser } from 'firebase/auth';
+import { initGoogleAuth, googleSignIn, googleSignOut } from '../lib/google-auth';
 
 interface AppState {
   advances: Advance[];
@@ -12,6 +14,7 @@ interface AppState {
   updateSettings: (k: string, v: boolean) => void;
   addAdvance: (a: Advance) => void;
   updateAdvance: (id: string, partial: Partial<Advance>) => void;
+  updateMultipleAdvances: (nextAdvances: Advance[]) => Promise<void>;
   deleteAdvance: (id: string) => void;
   toast: (msg: string, type?: string) => void;
   toastState: { msg: string; type: string; show: boolean };
@@ -36,15 +39,32 @@ interface AppState {
   saveMasterProjects: (p: Project[]) => Promise<void>;
   saveMasterCategories: (c: Category[]) => Promise<void>;
   saveApprovalMatrix: (matrix: { signatureOwner: string; autoApproveThreshold: number }) => Promise<void>;
+  refreshMasterUsers: () => Promise<void>;
 
   // Role access control configurations
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;
-  userRoles: any[];
-  setUserRoles: (r: any[]) => void;
+  // Google Workspace Integration
+  googleUser: User | null;
+  googleToken: string | null;
+  isLoggingInGoogle: boolean;
+  loginGoogle: () => Promise<void>;
+  logoutGoogle: () => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
+
+const uniqueById = <T extends { id?: string }>(list: T[]): T[] => {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<string>();
+  return list.filter(item => {
+    if (!item || typeof item !== 'object') return false;
+    if (!item.id) return true;
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+};
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [advances, setAdvances] = useState<Advance[]>([]);
@@ -66,11 +86,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   const [toastState, setToastState] = useState({ msg: '', type: '', show: false });
+  
+  // Google Auth State
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isLoggingInGoogle, setIsLoggingInGoogle] = useState(false);
   const [modal, setModal] = useState({ title: '', desc: null as ReactNode, actions: null as ReactNode, show: false });
   const [drawer, setDrawer] = useState({ hdr: null as ReactNode, body: null as ReactNode, foot: null as ReactNode, show: false });
 
   const DEFAULT_ROLES = [
     { id: 'R1', name: 'Administrator', users: 3, type: 'Full Access', desc: 'เข้าถึงได้ทุกระบบและการตั้งค่า', permissions: ['dashboard', 'datacenter', 'list', 'clearinglist', 'create', 'approval', 'clearance', 'accounting', 'vault', 'reports', 'settings', 'staff-directory', 'project-settings', 'categories', 'access-control', 'pin-full-access', 'approval-workflow', 'ai-control', 'line-integration', 'google-sheet-sync', 'document-templates', 'number-running', 'backup-restore', 'system-health', 'audit-center'] },
+    { id: 'R4', name: 'Executive', users: 1, type: 'Full Access', desc: 'ผู้บริหารระดับสูง อนุมัติเอกสารในระบบและผ่าน LINE มีสิทธิ์เข้าถึงเสมือนแอดมิน', permissions: ['dashboard', 'datacenter', 'list', 'clearinglist', 'create', 'approval', 'clearance', 'accounting', 'vault', 'reports', 'settings', 'staff-directory', 'project-settings', 'categories', 'access-control', 'pin-full-access', 'approval-workflow', 'ai-control', 'line-integration', 'google-sheet-sync', 'document-templates', 'number-running', 'backup-restore', 'system-health', 'audit-center'] },
     { id: 'R2', name: 'Accounting', users: 8, type: 'Custom', desc: 'สิทธิ์เฉพาะโมดูลการเงินและการตรวจสอบบัญชี', permissions: ['dashboard', 'datacenter', 'list', 'clearinglist', 'accounting', 'vault', 'reports'] },
     { id: 'R3', name: 'Employee / Requester', users: 131, type: 'Custom', desc: 'ขอเบิกเงินทดรองจ่ายและส่งงานเคลียร์ค่าใช้จ่าย', permissions: ['dashboard', 'list', 'clearinglist', 'create'] },
   ];
@@ -81,22 +107,73 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('clear_advance_current_user', JSON.stringify(u));
     } else {
       localStorage.removeItem('clear_advance_current_user');
+      localStorage.removeItem('clear_advance_auth_token');
     }
   };
 
   React.useEffect(() => {
     let active = true;
+    
+    // Step 1: Bootstrap / check session
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(authMe => {
+        if (!active) return;
+        if (authMe) {
+          setCurrentUserInternal(authMe);
+        } else {
+          setCurrentUserInternal(null);
+        }
+      })
+      .catch(() => {
+        if (active) setCurrentUserInternal(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    // Initialize Google Auth
+    const unsubGoogle = initGoogleAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+
+    return () => { 
+      active = false; 
+      unsubGoogle();
+    };
+  }, []);
+
+  // Step 2: Fetch application data whenever an authenticated user is active
+  React.useEffect(() => {
+    if (!currentUser) {
+      setSyncStatus('saved');
+      return;
+    }
+
+    let active = true;
+    setSyncStatus('loading');
+
     Promise.all([
-      fetch('/api/state').then(r => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch('/api/store/master-users').then(r => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch('/api/store/master-projects').then(r => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch('/api/store/master-categories').then(r => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch('/api/store/approval-matrix').then(r => { if (!r.ok) throw new Error(); return r.json(); }),
-      fetch('/api/store/roles').then(r => r.json().catch(() => []))
+      fetch('/api/state').then(r => {
+        if (!r.ok) throw new Error('Failed to load state');
+        return r.json();
+      }),
+      fetch('/api/store/master-users?t=' + Date.now()).then(r => { if (!r.ok) throw new Error('Fail'); return r.json(); }),
+      fetch('/api/store/master-projects?t=' + Date.now()).then(r => { if (!r.ok) throw new Error('Fail'); return r.json(); }),
+      fetch('/api/store/master-categories?t=' + Date.now()).then(r => { if (!r.ok) throw new Error('Fail'); return r.json(); }),
+      fetch('/api/store/approval-matrix?t=' + Date.now()).then(r => { if (!r.ok) throw new Error('Fail'); return r.json(); }),
+      fetch('/api/store/roles?t=' + Date.now()).then(r => { if (!r.ok) throw new Error('Fail'); return r.json(); })
     ])
       .then(([state, users, projects, categories, matrix, roles]) => {
         if (!active) return;
-        setAdvances(Array.isArray(state.advances) ? state.advances : []);
+        setAdvances(uniqueById(Array.isArray(state.advances) ? state.advances : []));
         setSettings(state.settings && typeof state.settings === 'object' ? state.settings : {});
         
         const loadedUsers = Array.isArray(users) ? users : [];
@@ -104,20 +181,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         const loadedRoles = Array.isArray(roles) && roles.length > 0 ? roles : DEFAULT_ROLES;
         setUserRoles(loadedRoles);
-
-        // Load active user session from localStorage or set default
-        const cachedUser = localStorage.getItem('clear_advance_current_user');
-        if (cachedUser) {
-          try {
-            setCurrentUserInternal(JSON.parse(cachedUser));
-          } catch {
-            const defaultUser = loadedUsers.find(u => u.role === 'Administrator') || loadedUsers[0] || { id: 'SEM-0000', name: 'System Administrator', nickname: 'SA', position: 'IT Manager', role: 'Administrator', status: 'ใช้งาน' };
-            setCurrentUserInternal(defaultUser);
-          }
-        } else {
-          const defaultUser = loadedUsers.find(u => u.role === 'Administrator') || loadedUsers[0] || { id: 'SEM-0000', name: 'System Administrator', nickname: 'SA', position: 'IT Manager', role: 'Administrator', status: 'ใช้งาน' };
-          setCurrentUserInternal(defaultUser);
-        }
 
         const normalizedProjects = (Array.isArray(projects) ? projects : []).map((p: any) => ({
           ...p,
@@ -137,12 +200,35 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       .catch(() => {
         if (!active) return;
         setSyncStatus('error');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
       });
-    return () => { active = false; };
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id]);
+
+  const loginGoogle = async () => {
+    setIsLoggingInGoogle(true);
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleUser(result.user);
+        setGoogleToken(result.accessToken);
+        toast('เชื่อมต่อ Google สำเร็จ', 'success');
+      }
+    } catch (err) {
+      toast('การเชื่อมต่อ Google ล้มเหลว', 'err');
+    } finally {
+      setIsLoggingInGoogle(false);
+    }
+  };
+
+  const logoutGoogle = async () => {
+    await googleSignOut();
+    setGoogleUser(null);
+    setGoogleToken(null);
+    toast('ยกเลิกการเชื่อมต่อ Google แล้ว', 'info');
+  };
 
   const persistState = async (nextAdvances: Advance[], nextSettings: Record<string, boolean>) => {
     setSyncStatus('saving');
@@ -154,7 +240,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
       if (!response.ok) throw new Error('State save failed');
       const saved = await response.json();
-      setAdvances(Array.isArray(saved.advances) ? saved.advances : nextAdvances);
+      setAdvances(uniqueById(Array.isArray(saved.advances) ? saved.advances : nextAdvances));
       setSettings(saved.settings && typeof saved.settings === 'object' ? saved.settings : nextSettings);
       setSyncStatus('saved');
     } catch {
@@ -172,27 +258,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  const refreshMasterUsers = async () => {
+    const res = await fetch('/api/store/master-users?t=' + Date.now());
+    if (res.ok) {
+        const users = await res.json();
+        setMasterUsers(Array.isArray(users) ? users : []);
+    }
+  };
+
   const saveMasterProjects = async (next: Project[]) => {
+    console.log(`💾 saveMasterProjects called with length: ${next.length}`);
     const normalized = next.map((p: any) => ({
       ...p,
       id: p.id || p.code,
       code: p.code || p.id
     }));
     setMasterProjects(normalized);
-    await fetch('/api/store/master-projects', {
+    const response = await fetch('/api/store/master-projects', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalized)
     });
+    if (!response.ok) {
+      console.error("Save failed", await response.text());
+      toast("บันทึกโครงการไม่สำเร็จ", "error");
+      throw new Error("Save failed");
+    }
   };
 
   const saveMasterCategories = async (next: Category[]) => {
     setMasterCategories(next);
-    await fetch('/api/store/master-categories', {
+    const response = await fetch('/api/store/master-categories', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(next)
     });
+    if (!response.ok) {
+      console.error("Save failed", await response.text());
+      toast("บันทึกหมวดหมู่ไม่สำเร็จ", "error");
+      throw new Error("Save failed");
+    }
   };
 
   const saveApprovalMatrix = async (next: { signatureOwner: string; autoApproveThreshold: number }) => {
@@ -216,16 +321,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     window.scrollTo(0, 0);
   };
 
+  const uniqueAdvances = useMemo(() => uniqueById(advances), [advances]);
+
+  const visibleAdvances = useMemo(() => {
+    if (!currentUser) return [];
+    const lowerRole = (currentUser.role || '').toLowerCase();
+    const isStaff = lowerRole === 'administrator' || lowerRole === 'executive' || lowerRole === 'accounting' || lowerRole === 'admin' || lowerRole === 'ฝ่ายบัญชี';
+    if (isStaff) return uniqueAdvances;
+    return uniqueAdvances.filter(a => a.empId === currentUser.id || a.empName === currentUser.name);
+  }, [uniqueAdvances, currentUser]);
+
   return (
     <AppContext.Provider value={{
-      advances, settings, loading, syncStatus, page, setPage, pageExtra,
+      advances: visibleAdvances, settings, loading, syncStatus, page, setPage, pageExtra,
       updateSettings: (k, v) => setSettings(s => {
         const next = { ...s, [k]: v };
-        void persistState(advances, next);
+        void persistState(uniqueAdvances, next);
         return next;
       }),
       addAdvance: (a) => setAdvances(prev => {
-        const next = [...prev, a];
+        const next = uniqueById([...prev, a]);
         void persistState(next, settings);
         return next;
       }),
@@ -234,6 +349,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         void persistState(next, settings);
         return next;
       }),
+      updateMultipleAdvances: async (nextAdvances) => {
+        setAdvances(nextAdvances);
+        await persistState(nextAdvances, settings);
+      },
       deleteAdvance: (id) => setAdvances(prev => {
         const next = prev.filter(a => a.id !== id);
         void persistState(next, settings);
@@ -322,10 +441,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // Master configurations
       masterUsers, masterProjects, masterCategories, approvalMatrix,
-      saveMasterUsers, saveMasterProjects, saveMasterCategories, saveApprovalMatrix,
+      saveMasterUsers, saveMasterProjects, saveMasterCategories, saveApprovalMatrix, refreshMasterUsers,
 
       // Role access control configurations
-      currentUser, setCurrentUser, userRoles, setUserRoles
+      currentUser, setCurrentUser, userRoles, setUserRoles,
+
+      // Google Workspace
+      googleUser, googleToken, isLoggingInGoogle, loginGoogle, logoutGoogle
     }}>
       {children}
     </AppContext.Provider>

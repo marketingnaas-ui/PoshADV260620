@@ -1,30 +1,42 @@
-# ClearAdvance Pro V2
+# 🛡️ Code Installation Protocol (คู่มือความปลอดภัย)
 
-**GitHub Repository:** https://github.com/marketingnaas-ui/advc1
+**คำสั่งสำหรับ Developer (หรือใส่ในหน้าเอกสารโปรเจกต์):**
+> **"ก่อนเริ่มการติดตั้ง/อัปเดตระบบหรือฟีเจอร์ใหม่:**
+>  1. **Zero Impact Policy:** ห้ามแก้ไขโครงสร้างของ App.tsx (ไฟล์หลัก) โดยตรง ให้ใช้การเพิ่ม Route ใหม่หรือการสร้าง New Component ขึ้นมาเท่านั้น หากต้องแก้ไขให้เพิ่ม Component ให้เป็นลักษณะของ Modualar
+>  2. **State Isolation:** ข้อมูลจำลอง (Mock Data) ใน useState ต้องถูกแยกออกมาในไฟล์ (เช่น src/data.ts หรือ src/lib/stats.ts) เพื่อให้สลับไปใช้ API Call ได้ง่ายในภายหลังโดยไม่แก้ไฟล์ UI
+>  3. **TypeScript Compliance:** โค้ดใหม่ทุกบรรทัดต้องผ่านการตรวจสอบ tsc (TypeScript Compiler) ห้ามมี any ที่ไม่จำเป็น และต้องประกาศ Interface สำหรับ Props และ Type เสมอ (ดู src/types.ts เป็นตัวอย่าง)
+>  4. **CSS Scoping:** ตรวจสอบให้แน่ใจว่าการจัดวาง (Layout) ใช้เทคนิค CSS Grid/Flexbox ภายใน Container ที่กำหนดไว้เท่านั้น ห้ามใช้ fixed, absolute หรือ z-index ที่อาจไปทับซ้อนกับเมนู Sidebar หรือ Header เดิมของระบบ
+>  5. **Rollback Ready:** ก่อนเริ่มติดตั้ง ให้ทำการ Commit งานปัจจุบันลงใน Branch ใหม่ทุกครั้ง หากติดตั้งแล้วพบ Error ในระบบเดิม ให้ทำการ Checkout กลับไปยัง Branch หลักทันที"
 
-## Run Locally
+---
 
-Prerequisite: Node.js
+## 📌 สรุปการปรับปรุงล่าสุด (Document Tracking & Status Mapping)
 
-1. Install dependencies:
-   `npm.cmd install`
-2. Optional: copy `.env.example` to `.env` and set `GEMINI_API_KEY` for real Gemini OCR.
-3. Run the app:
-   `npm.cmd run dev`
-4. Open:
-   `http://127.0.0.1:3000`
+ฟีเจอร์ล่าสุดที่ได้รับการพัฒนาลงในระบบ มีดังนี้:
 
-PowerShell on some Windows machines blocks `npm.ps1`, so use `npm.cmd` as shown above.
+1. **เพิ่มสถานะเอกสารทั้งระบบ:**
+   - **รออนุมัติ (PENDING_APPROVAL):** รายการที่มีการสร้างใบเบิกเข้ามาใหม่
+   - **รอโอน (WAITING_TRANSFER):** รายการที่อนุมัติแล้วรอการโอนเงิน
+   - **รอเคลียร์ (WAITING_CLEARANCE):** รายการที่โอนเงินแล้ว รอพนักงานแนบสลิป/บิล
+   - **บันทึกเคลียร์บางส่วน (PARTIAL_CLEARANCE):** บันทึกการเคลียร์แล้วส่วนหนึ่ง รหัสยังนำไปใช้เคลียร์บิลอื่นได้ต่อ
+   - **รอเอกสารตัวจริง (WAITING_PHYSICAL_DOCS):** ตรวจสอบในระบบแล้ว แต่รอเอกสารตัวจริง/ต้นฉบับมาส่งที่แผนกบัญชี
+   - **ปิดยอด (CLOSED):** เคลียร์ยอดเรียบร้อยและได้รับเอกสารครบถ้วน
+   - **ไม่อนุมัติ (REJECTED):** รายการที่ไม่ได้รับการอนุมัติในหน้า "อนุมัติและโอนเงิน"
+   - **เอกสารตีกลับ (RETURNED):** ฝ่ายบัญชีตีกลับให้พนักงานแก้ไข/ส่งเอกสารใหม่ในหน้า "ตรวจบิลและปิดยอด"
 
-If port 3000 is already in use:
+2. **หน้า Document Tracking Center:**
+   - เพิ่มฟังก์ชันและตารางการตรวจสอบ "เงินเคลียร์สะสม (เอกสารครบ)" แบบ Real-time
+   - เปิดใช้งานปุ่ม **Export Excel** และ **ส่งเตือน LINE ทั้งหมด** ให้พร้อมใช้งานสำหรับเชื่อมต่อ API ต่อไป
 
-```powershell
-$env:PORT="3001"; npm.cmd run dev
-```
+3. **Dashboard ผู้บริหาร:**
+   - เพิ่มกล่องข้อมูลเงินเคลียร์สะสมผ่านระบบ (เทียบระหว่างเอกสารตัวจริงครบถ้วนแล้ว vs เคลียร์แค่ในระบบดิจิทัล)
 
-## Commands
+---
 
-- `npm.cmd run lint` checks TypeScript.
-- `npm.cmd run build` builds the frontend and production server.
-- `npm.cmd start` runs the production build after `npm.cmd run build`.
-- `npm.cmd run clean` removes generated build output.
+### ถ้าคุณจะส่งโค้ดให้ AI (เช่น ChatGPT/Claude) ช่วยนำเข้าสู่ระบบเพิ่มเติม:
+ให้แนบคำสั่งนี้ไปกับโค้ดที่คุณต้องการนำเข้า เพื่อป้องกัน "ระบบเจ๊ง":
+> "ช่วยนำโค้ดนี้ไปรวมเข้ากับโปรเจกต์ React + TypeScript ของฉัน โดยมีข้อแม้ว่า:
+>  * อย่าแก้ไข Router หรือ Global State เดิมของฉัน เว้นแต่จะได้รับอนุญาต
+>  * ให้เขียนโค้ดแยกเป็นโมดูล (Modular) ในโฟลเดอร์ให้ชัดเจน
+>  * ปรับเปลี่ยน useState ของ Mock Data ให้เป็นโครงสร้างที่รองรับการเชื่อมกับ API ของระบบฉัน (ใช้โครงสร้าง Async/Await กับ Axios)
+>  * **ถ้าการเขียนโค้ดนี้มีความเสี่ยงที่จะไปกระทบระบบ Login หรือหน้า Dashboard เดิม ให้หยุดเขียนทันทีแล้วถามฉันก่อน**"

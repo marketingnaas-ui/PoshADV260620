@@ -117,9 +117,9 @@ export const AdvanceDetailView = {
     if (!r) return null;
     
     const pipeline = ['ส่งคำขอ', 'อนุมัติ', 'โอนเงิน', 'เคลียร์', 'ปิดยอด'];
-    const pStep: Record<string, number> = { PENDING_APPROVAL: 0, WAITING_TRANSFER: 1, WAITING_CLEARANCE: 2, CLOSED: 4, REJECTED: 1 };
+    const pStep: Record<string, number> = { PENDING_APPROVAL: 0, WAITING_TRANSFER: 1, WAITING_CLEARANCE: 2, DRAFT_CLEARANCE: 2, PARTIAL_CLEARANCE: 2, WAITING_PHYSICAL_DOCS: 2, CLOSED: 4, REJECTED: 1, RETURNED: 3 };
     const curStep = pStep[r.status] ?? 0;
-    const isDone = (i: number) => r.status === 'REJECTED' ? i === 0 : i < curStep || (r.status === 'CLOSED' && i <= 4);
+    const isDone = (i: number) => (r.status === 'REJECTED' || r.status === 'RETURNED') ? i === 0 : i < curStep || (r.status === 'CLOSED' && i <= 4);
 
     return (
       <>
@@ -131,7 +131,7 @@ export const AdvanceDetailView = {
           <div style={{ fontSize: '12px', color: 'var(--tm)' }}>{r.pName}</div>
           <div className="pipe">
             {pipeline.map((p, i) => {
-              const st = r.status === 'REJECTED' && i === 1 ? 'ps-fail' : isDone(i) ? 'ps-ok' : i === curStep ? 'ps-ac' : 'ps-id';
+              const st = (r.status === 'REJECTED' && i === 1) || (r.status === 'RETURNED' && i === 3) ? 'ps-fail' : isDone(i) ? 'ps-ok' : i === curStep ? 'ps-ac' : 'ps-id';
               return <React.Fragment key={p}>{i > 0 && <span style={{ color: 'var(--tm)', fontSize: '14px' }}>›</span>}<span className={`ps ${st}`}>{p}</span></React.Fragment>;
             })}
           </div>
@@ -171,12 +171,12 @@ export const AdvanceDetailView = {
     const isPendingApproval = r.status === 'PENDING_APPROVAL' || r.status === 'รออนุมัติ';
     const isWaitingTransfer = r.status === 'WAITING_TRANSFER' || r.status === 'รอโอน';
     const isClosed = r.status === 'CLOSED' || r.status === 'ปิดยอด' || r.status === 'ปิดยอดแล้ว';
-    const isRejected = r.status === 'REJECTED' || r.status === 'ไม่อนุมัติ' || r.status === 'ปฏิเสธ';
+    const isRejected = r.status === 'REJECTED' || r.status === 'ไม่อนุมัติ' || r.status === 'ปฏิเสธ' || r.status === 'RETURNED' || r.status === 'เอกสารตีกลับ';
     
-    const isWaitingClearanceStatus = r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด';
+    const isWaitingClearanceStatus = r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด' || r.status === 'PARTIAL_CLEARANCE' || r.status === 'WAITING_PHYSICAL_DOCS' || r.status === 'DRAFT_CLEARANCE';
     const isWaitingAudit = isWaitingClearanceStatus && (!!r.reviewStatus || (r.clrs && r.clrs.length > 0));
     const isWaitingClearance = isWaitingClearanceStatus && !isWaitingAudit;
-
+    
     const runCheckflow = (actionLabel: string, actionColor: string, isApprove: boolean) => {
       openModal(
         `🔒 ยืนยันรหัสผ่านเพื่อลงนามทำธุรกรรม (${actionLabel})`,
@@ -209,7 +209,7 @@ export const AdvanceDetailView = {
         </div>,
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', width: '100%' }}>
           <button className="btn btn-o" onClick={closeModal}>ยกเลิก</button>
-          <button className="btn" style={{ background: actionColor, color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 16px', fontSize: '12.5px', fontWeight: 600 }} onClick={() => {
+          <button className="btn" style={{ background: actionColor, color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 16px', fontSize: '12.5px', fontWeight: 600 }} onClick={async () => {
             const passwordValueVal = (document.getElementById('cf_password') as HTMLInputElement)?.value || '';
             const rejectReasonVal = (document.getElementById('cf_reject_reason') as HTMLTextAreaElement)?.value || '';
 
@@ -222,47 +222,24 @@ export const AdvanceDetailView = {
               return;
             }
 
-            // Look up corresponding staff member by PIN
-            const matchedStaff = masterUsers.find(u => u.pin && u.pin.trim() === passwordValueVal.trim());
+            // Task 4: Verify PIN via backend API
             let executorName = '';
             let matchedRoleName = '';
 
-            if (matchedStaff) {
-              executorName = matchedStaff.name;
-              matchedRoleName = matchedStaff.role || matchedStaff.position || 'Staff';
-            } else {
-              // Try fallback group passwords
-              const isMasterPin = passwordValueVal.trim() === '1234';
-              let matchedRoleObj: any = null;
+            try {
+              const vres = await fetch('/api/auth/verify-pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin: passwordValueVal.trim() })
+              });
+              const vdata = await vres.json();
 
-              if (isMasterPin) {
-                matchedRoleObj = { name: 'Administrator' };
-              } else {
-                matchedRoleObj = dbRoles.find(role => {
-                  const password = role.password || (
-                    role.id === 'R1' || role.name === 'Administrator' ? 'admin123' :
-                    role.id === 'R2' || role.name === 'Accounting' ? 'acc123' :
-                    role.id === 'R3' || role.name === 'Employee / Requester' ? 'emp123' : ''
-                  );
-                  return password && password.trim() === passwordValueVal.trim();
-                });
-                
-                if (!matchedRoleObj) {
-                  const cleanPass = passwordValueVal.trim();
-                  if (cleanPass === 'admin123') {
-                    matchedRoleObj = { name: 'Administrator' };
-                  } else if (cleanPass === 'acc123') {
-                    matchedRoleObj = { name: 'Accounting' };
-                  } else if (cleanPass === 'emp123') {
-                    matchedRoleObj = { name: 'Employee / Requester' };
-                  }
-                }
+              if (vdata.success) {
+                executorName = vdata.user.name;
+                matchedRoleName = vdata.user.role;
               }
-
-              if (matchedRoleObj) {
-                executorName = `ผู้รับผิดชอบกลุ่ม (${matchedRoleObj.name})`;
-                matchedRoleName = matchedRoleObj.name;
-              }
+            } catch (err) {
+              console.error('PIN verification failed:', err);
             }
 
             if (executorName) {
@@ -391,7 +368,7 @@ export const AdvanceDetailView = {
               </div>
               <div style={{ background: '#fff', border: '1px solid #fef08a', padding: '6px', borderRadius: '6px', textAlign: 'center' }}>
                 <div style={{ fontSize: '10px', color: 'var(--tm)' }}>คงเหลือ</div>
-                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#ef4444' }}>฿{fmt(Math.max(0, (r.appAmount || r.amount) - r.clrAmount))}</div>
+                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#ef4444' }}>฿{fmt((r.appAmount || r.amount) - r.clrAmount)}</div>
               </div>
             </div>
 
@@ -573,7 +550,7 @@ export const AdvanceDetailView = {
             </table>
           </div>
         </div>
-        {r.clrs?.length ? <div className="ds"><div className="ds-t">ประวัติเคลียร์ยอด</div>{r.clrs.map(cl => <div key={cl.id} style={{ background: 'var(--soft)', borderRadius: 'var(--rs)', padding: '11px', border: '1.5px solid var(--bdr)', marginBottom: '6px' }}><div className="flb"><span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--p)' }}>{cl.id}</span><span style={{ fontSize: '13px', fontWeight: 700, color: '#10b981' }}>฿{fmt(cl.amount)}</span></div><div style={{ fontSize: '11.5px', color: 'var(--ts)', marginTop: '3px' }}>วันที่: {fmtD(cl.date)} · {cl.note}</div></div>)}</div> : null}
+        {r.clrs?.length ? <div className="ds"><div className="ds-t">ประวัติเคลียร์ยอด</div>{r.clrs.map((cl, idx) => <div key={`${cl.id}-${idx}`} style={{ background: 'var(--soft)', borderRadius: 'var(--rs)', padding: '11px', border: '1.5px solid var(--bdr)', marginBottom: '6px' }}><div className="flb"><span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--p)' }}>{cl.id}</span><span style={{ fontSize: '13px', fontWeight: 700, color: '#10b981' }}>฿{fmt(cl.amount)}</span></div><div style={{ fontSize: '11.5px', color: 'var(--ts)', marginTop: '3px' }}>วันที่: {fmtD(cl.date)} · {cl.note}</div></div>)}</div> : null}
         <div className="ds"><div className="ds-t">Audit Timeline</div>{tl.map((t, i) => <div key={i} className="tl-item"><div className="tl-dot" style={{ background: t.ok ? 'var(--p)' : 'var(--bdr)' }}></div><div><div className="tl-t" style={{ color: t.ok ? 'var(--tx)' : 'var(--tm)' }}>{t.t}</div><div className="tl-d">{t.d}</div></div></div>)}</div>
         {r.files?.length ? (
           <div className="ds">
@@ -600,9 +577,9 @@ export const AdvanceDetailView = {
     const isPendingApproval = r.status === 'PENDING_APPROVAL' || r.status === 'รออนุมัติ';
     const isWaitingTransfer = r.status === 'WAITING_TRANSFER' || r.status === 'รอโอน';
     const isClosed = r.status === 'CLOSED' || r.status === 'ปิดยอด' || r.status === 'ปิดยอดแล้ว';
-    const isRejected = r.status === 'REJECTED' || r.status === 'ไม่อนุมัติ' || r.status === 'ปฏิเสธ';
+    const isRejected = r.status === 'REJECTED' || r.status === 'ไม่อนุมัติ' || r.status === 'ปฏิเสธ' || r.status === 'RETURNED' || r.status === 'เอกสารตีกลับ';
     
-    const isWaitingClearanceStatus = r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด';
+    const isWaitingClearanceStatus = r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด' || r.status === 'PARTIAL_CLEARANCE' || r.status === 'WAITING_PHYSICAL_DOCS' || r.status === 'DRAFT_CLEARANCE';
     const isWaitingAudit = isWaitingClearanceStatus && (!!r.reviewStatus || (r.clrs && r.clrs.length > 0));
     const isWaitingClearance = isWaitingClearanceStatus && !isWaitingAudit;
 

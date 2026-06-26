@@ -1,7 +1,9 @@
 {
-  "name": "Remix: Naas Advc1 Marketing UI",
-  "description": "A sleek marketing landing page template optimized for lead generation and digital campaigns using the Naas framework.",
-  "requestFramePermissions": [],
+  "name": "ClearAdvance Pro V2: Smart Clearing Center",
+  "description": "Enterprise-grade advance payment and clearing system with AI-powered OCR, multi-project budget tracking, and automated voucher generation.",
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

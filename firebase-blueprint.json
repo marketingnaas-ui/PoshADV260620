@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and master data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "dept": { "type": "string" },
+        "role": { "type": "string" },
+        "bank": { "type": "string" },
+        "bankNo": { "type": "string" },
+        "ini": { "type": "string" },
+        "email": { "type": "string" },
+        "status": { "type": "string", "enum": ["ใช้งาน", "ปิดใช้งาน"] }
+      },
+      "required": ["id", "name"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Project master data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "budget": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Expense category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Advance": {
+      "title": "Advance",
+      "description": "Cash advance request and its lifecycle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "empId": { "type": "string" },
+        "empName": { "type": "string" },
+        "status": { "type": "string" },
+        "amount": { "type": "number" },
+        "items": { "type": "array" },
+        "receipts": { "type": "array" }
+      },
+      "required": ["id", "empId", "status"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Generic store for lists of items",
+      "type": "object",
+      "properties": {
+        "records": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AppState": {
+      "title": "AppState",
+      "description": "Global application state",
+      "type": "object",
+      "properties": {
+        "advances": { "type": "array" },
+        "settings": { "type": "object" },
+        "running_numbers": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "/clearadvanceStores/{storeId}": {
+      "schema": "Store",
+      "description": "Collections of master data and logs"
+    },
+    "/clearadvanceApp/state": {
+      "schema": "AppState",
+      "description": "Singleton document for global state"
+    }
+  }
+}

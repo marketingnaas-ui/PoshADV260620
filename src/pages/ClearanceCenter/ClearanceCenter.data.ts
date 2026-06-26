@@ -3,6 +3,8 @@ export interface AttachmentItem {
   file: File;
   url: string;
   name: string;
+  docType?: string;
+  otherTypeDesc?: string;
 }
 
 export interface ClearanceItem {
@@ -13,6 +15,7 @@ export interface ClearanceItem {
   projectId: string;
   vatType: 'none' | 'exclude' | 'include' | string;
   whtRate: string;
+  category?: string;
 }
 
 export interface VendorInfo {
@@ -30,24 +33,13 @@ export interface ReceiptExtras {
   otherAmount: number;
 }
 
-// --- MOCK DATA ---
-export const PROJECTS = [
-  { id: 'PRJ-001', name: 'งานติดตั้งระบบเน็ตเวิร์ก สนง.ใหญ่' },
-  { id: 'PRJ-002', name: 'แคมเปญการตลาดออนไลน์ Q3' },
-  { id: 'PRJ-003', name: 'ปรับปรุงพื้นที่ส่วนกลางสาขาลาดพร้าว' },
-];
-
-export const MOCK_ADVANCE = {
-  advNo: 'ADV-2026-0089',
-  empName: 'สมชาย ใจดี (EMP001)',
-  advAmount: 25000.00,
-  defaultProject: 'PRJ-001'
-};
-
 export const DOC_TYPES = [
-  'ใบกำกับภาษีเต็มรูป (Tax Invoice)',
-  'ใบเสร็จรับเงิน (Receipt)',
-  'บิลเงินสด (Cash Sale)'
+  'ใบกำกับภาษีเต็มรูปแบบ',
+  'ใบกำกับภาษีอย่างย่อ',
+  'บิลเงินสด',
+  'สลิปโอนเงิน',
+  'ใบเสร็จรับเงิน',
+  'ใบรับของ'
 ];
 
 // Utility functions

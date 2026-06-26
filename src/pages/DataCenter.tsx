@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { overdue, fmtD, fmt, SBadge, UserAvt } from '../lib/utils';
 import { AdvanceDetailView } from '../components/AdvanceDetailView';
+import { SmartFilter } from '../components/SmartFilter';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export const DataCenter = () => {
@@ -9,25 +10,33 @@ export const DataCenter = () => {
   const [view, setView] = useState('table');
   const [fSearch, setFSearch] = useState('');
   const [fStatus, setFStatus] = useState(pageExtra?.statusF !== undefined ? pageExtra.statusF : '');
-  const [fEmp, setFEmp] = useState('');
-  const [fProj, setFProj] = useState('');
+  const [fEmp, setFEmp] = useState(pageExtra?.empIdF !== undefined ? pageExtra.empIdF : '');
+  const [fProj, setFProj] = useState(pageExtra?.pIdF !== undefined ? pageExtra.pIdF : '');
   const [fCat, setFCat] = useState('');
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
   const [calY, setCalY] = useState(2026);
   const [calM, setCalM] = useState(6);
 
   useEffect(() => {
     if (pageExtra?.statusF !== undefined) setFStatus(pageExtra.statusF);
+    if (pageExtra?.pIdF !== undefined) setFProj(pageExtra.pIdF);
+    if (pageExtra?.empIdF !== undefined) setFEmp(pageExtra.empIdF);
   }, [pageExtra]);
 
   const clearF = () => { setFSearch(''); setFStatus(''); setFEmp(''); setFProj(''); setFCat(''); };
 
   const filtered = advances.filter(r => {
-    const s = fSearch.toLowerCase();
-    const ms = !s || r.id.toLowerCase().includes(s) || r.empName.toLowerCase().includes(s) || r.pName.toLowerCase().includes(s) || r.desc.toLowerCase().includes(s);
-    const mst = !fStatus || (fStatus === 'OVERDUE' ? overdue(r) : r.status === fStatus);
+    if (!r) return false;
+    const s = (fSearch || '').toLowerCase();
+    const ms = !s || 
+               (r.id || '').toLowerCase().includes(s) || 
+               (r.empName || '').toLowerCase().includes(s) || 
+               (r.pName || '').toLowerCase().includes(s) || 
+               (r.desc || '').toLowerCase().includes(s);
+    const mst = !fStatus || (fStatus === 'OVERDUE' ? overdue(r) : (fStatus === 'WAITING_CLEARANCE' ? ['WAITING_CLEARANCE', 'CLEARED_BY_EMPLOYEE', 'PARTIAL_CLEARANCE', 'WAITING_PHYSICAL_DOCS'].includes(r.status) : r.status === fStatus));
     const me = !fEmp || r.empId === fEmp;
-    const mp = !fProj || r.pIds.includes(fProj);
+    const mp = !fProj || (Array.isArray(r.pIds) && r.pIds.includes(fProj));
     const mc = !fCat || r.catId === fCat;
     return ms && mst && me && mp && mc;
   });
@@ -53,13 +62,15 @@ export const DataCenter = () => {
     const cats: Record<string, number> = {};
 
     advances.forEach(r => {
-      totalRequested += r.amount;
-      const clr = r.clrAmount || 0;
+      if (!r) return;
+      const amt = Number(r.amount) || 0;
+      totalRequested += amt;
+      const clr = Number(r.clrAmount) || 0;
       totalCleared += clr;
-      const out = Math.max(0, r.amount - clr);
+      const out = amt - clr;
       totalOutstanding += out;
       
-      const dueDate = new Date(r.dueDate);
+      const dueDate = r.dueDate ? new Date(r.dueDate) : new Date(0);
       const isOverdue = out > 0 && today > dueDate;
       if (isOverdue) {
         totalOverdue += out;
@@ -68,8 +79,10 @@ export const DataCenter = () => {
 
       if (r.status === 'PENDING_APPROVAL') pendingApproval.push(r);
       if (out > 0) {
-        projMap.set(r.pName, (projMap.get(r.pName) || 0) + out);
-        empMap.set(r.empName, (empMap.get(r.empName) || 0) + out);
+        const pName = r.pName || 'Unassigned';
+        const empName = r.empName || 'Anonymous';
+        projMap.set(pName, (projMap.get(pName) || 0) + out);
+        empMap.set(empName, (empMap.get(empName) || 0) + out);
         
         const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
         if (diffDays <= 0) ageMap.safe += out;
@@ -83,7 +96,8 @@ export const DataCenter = () => {
       else if (r.status === 'CLOSED') workflows.check++;
 
       // Simplified categories
-      cats[r.catName || 'อื่นๆ'] = (cats[r.catName || 'อื่นๆ'] || 0) + r.amount;
+      const cName = r.catName || 'อื่นๆ';
+      cats[cName] = (cats[cName] || 0) + amt;
     });
 
     return { totalRequested, totalOutstanding, totalOverdue, totalCleared, pendingApproval, overdueList, projMap, empMap, ageMap, workflows, cats };
@@ -91,6 +105,18 @@ export const DataCenter = () => {
 
   const renderDashboard = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: '30px' }}>
+      <SmartFilter 
+        searchQuery={fSearch}
+        onSearchChange={setFSearch}
+        statusFilter={fStatus}
+        onStatusChange={setFStatus}
+        projectFilter={fProj}
+        onProjectChange={setFProj}
+        empFilter={fEmp}
+        onEmpChange={setFEmp}
+        onClear={clearF}
+        placeholder="ค้นหา เลขที่ / ชื่อ / โครงการ..."
+      />
       {/* Tier 1 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) 2fr', gap: '16px' }}>
         {[
@@ -154,49 +180,6 @@ export const DataCenter = () => {
           </ResponsiveContainer>
         </div>
       </div>
-    </div>
-  );
-
-  const FilterBar = () => (
-    <div className="fb">
-      <div className="sw">
-        <svg className="si" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input placeholder="ค้นหา เลขที่ / ชื่อ / โครงการ..." value={fSearch} onChange={e => setFSearch(e.target.value)} />
-      </div>
-      <div className="fg">
-        <label>สถานะ</label>
-        <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="">ทั้งหมด</option>
-          <option value="PENDING_APPROVAL">รออนุมัติ</option>
-          <option value="WAITING_TRANSFER">รอโอน</option>
-          <option value="WAITING_CLEARANCE">รอเคลียร์</option>
-          <option value="OVERDUE">⚠ เกินกำหนด</option>
-          <option value="CLOSED">ปิดยอด</option>
-          <option value="REJECTED">ไม่อนุมัติ</option>
-        </select>
-      </div>
-      <div className="fg">
-        <label>พนักงาน</label>
-        <select value={fEmp} onChange={e => setFEmp(e.target.value)}>
-          <option value="">ทั้งหมด</option>
-          {masterUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-      </div>
-      <div className="fg">
-        <label>โปรเจกต์</label>
-        <select value={fProj} onChange={e => setFProj(e.target.value)}>
-          <option value="">ทั้งหมด</option>
-          {masterProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </div>
-      <div className="fg">
-        <label>หมวด</label>
-        <select value={fCat} onChange={e => setFCat(e.target.value)}>
-          <option value="">ทั้งหมด</option>
-          {masterCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </div>
-      <button className="btn btn-g btn-sm" onClick={clearF}>✕ ล้าง</button>
     </div>
   );
 
@@ -415,13 +398,66 @@ export const DataCenter = () => {
       }
     });
 
+    // Group rows by advanceId to calculate incremental/sequential running balance chronologically
+    const groups: Record<string, any[]> = {};
+    rows.forEach(row => {
+      const advId = row.advanceId;
+      if (!groups[advId]) groups[advId] = [];
+      groups[advId].push(row);
+    });
+
+    // For each group, sort chronologically and compute running outstanding
+    Object.keys(groups).forEach(advId => {
+      const groupRows = groups[advId];
+      groupRows.sort((a, b) => {
+        if (a.clrNo === '–' && b.clrNo !== '–') return -1;
+        if (a.clrNo !== '–' && b.clrNo === '–') return 1;
+        const dateA = new Date(a.itemDate === '–' ? a.reqDate : a.itemDate).getTime();
+        const dateB = new Date(b.itemDate === '–' ? b.reqDate : b.itemDate).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+        return String(a.clrNo).localeCompare(String(b.clrNo));
+      });
+
+      let currentOutstanding = Number(groupRows[0]?.totalRequested) || 0;
+      let cumulativeCleared = 0;
+      
+      groupRows.forEach(row => {
+        const transAmount = Number(row.totalAmount) || 0;
+        cumulativeCleared += transAmount;
+        currentOutstanding -= transAmount;
+        row.totalCleared = cumulativeCleared;
+        row.outstandingBalance = currentOutstanding;
+        row.status = currentOutstanding > 0 ? 'รอเคลียร์ยอด' : row.status;
+      });
+    });
+
+    const sortedRows = rows.sort((a, b) => new Date(b.reqDate).getTime() - new Date(a.reqDate).getTime());
+    const isAllSelected = sortedRows.length > 0 && selectedIds.length === sortedRows.length;
+    
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    };
+    
+    const toggleSelectAll = () => {
+        if (isAllSelected) setSelectedIds([]);
+        else setSelectedIds(sortedRows.map(r => r.uniqKey));
+    };
+
     return (
       <>
-        <FilterBar />
+        {selectedIds.length > 0 && (
+          <div style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>เลือกแล้ว {selectedIds.length} รายการ:</span>
+            <button className="btn btn-sm" style={{ background: '#ef4444', color: '#fff' }} onClick={() => { setSelectedIds([]); }}>🗑 ลบ</button>
+            <button className="btn btn-sm" style={{ background: '#3b82f6', color: '#fff' }} onClick={() => {}}>📂 Export</button>
+            <button className="btn btn-sm" style={{ background: '#64748b', color: '#fff' }} onClick={() => {}}>🖨 พิมพ์</button>
+          </div>
+        )}
         <div className="tw" style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
-          <table className="dt" style={{ tableLayout: 'fixed', width: '4245px', minWidth: '4245px', borderCollapse: 'collapse' }}>
+          <table className="dt" style={{ tableLayout: 'fixed', width: '4285px', minWidth: '4285px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ height: '46px' }}>
+                <th style={cellStyle('40px')}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={isAllSelected} onChange={toggleSelectAll} /></th>
                 <th style={cellStyle('130px')}>Status</th>
                 <th style={cellStyle('130px')}>ADV_No</th>
                 <th style={cellStyle('115px')}>Action</th>
@@ -434,7 +470,6 @@ export const DataCenter = () => {
                 <th style={cellStyle('150px')}>Source_Account_No</th>
                 <th style={cellStyle('180px')}>Recipient_Bank_Name</th>
                 <th style={cellStyle('150px')}>Recipient_Account_No</th>
-
                 <th style={cellStyle('130px')}>CLR_No</th>
                 <th style={cellStyle('130px')}>Ref_ADV_No</th>
                 <th style={cellStyle('110px')}>Item_Date</th>
@@ -448,17 +483,17 @@ export const DataCenter = () => {
                 <th style={cellStyle('120px', true)}>Discount_Amount</th>
                 <th style={cellStyle('110px', true)}>Other_Cost</th>
                 <th style={cellStyle('130px', true)}>Total_Amount</th>
-
                 <th style={cellStyle('140px', true)}>Total_Requested</th>
                 <th style={cellStyle('140px', true)}>Total_Cleared</th>
                 <th style={cellStyle('160px', true)}>Outstanding_Balance</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length ? rows.map(row => (
+              {sortedRows.length ? sortedRows.map(row => (
                 <tr key={row.uniqKey} onClick={() => handleOpenAdv(row.advanceId)} style={{ cursor: 'pointer', height: '46px' }}>
+                  <td style={cellStyle('40px')} onClick={(e) => e.stopPropagation()}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={selectedIds.includes(row.uniqKey)} onChange={() => toggleSelect(row.uniqKey)} /></td>
                   <td style={cellStyle('130px')}><SBadge status={row.status} date={row.dueDate} /></td>
-                  <td style={cellStyle('130px')}><span className="dn">{row.advanceId}</span></td>
+                  <td style={cellStyle('130px')}><span className="dn">{row.advanceId && row.advanceId.includes('-') ? `${row.advanceId.split('-').slice(0, 2).join('-')}-${String(parseInt(row.advanceId.split('-')[2] || '0', 10)).padStart(3, '0')}` : row.advanceId}</span></td>
                   <td style={cellStyle('115px')} onClick={(e) => e.stopPropagation()}>
                     {(row.status === 'DRAFT' || row.status === 'บันทึกร่าง') ? (
                       <button className="btn btn-xs" style={{ background: '#10b981', color: '#fff', fontWeight: 600, padding: '4px 10px', borderRadius: '4px', border: 'none', cursor: 'pointer' }} onClick={() => setPage('create', { editAdvanceId: row.advanceId })}>
@@ -516,10 +551,9 @@ export const DataCenter = () => {
   };
 
   const renderCard = () => {
-    const SC: Record<string, string> = { PENDING_APPROVAL: '#f59e0b', WAITING_TRANSFER: '#3b82f6', WAITING_CLEARANCE: '#8b5cf6', CLOSED: '#10b981', REJECTED: '#ef4444' };
+    const SC: Record<string, string> = { PENDING_APPROVAL: '#f59e0b', WAITING_TRANSFER: '#3b82f6', WAITING_CLEARANCE: '#8b5cf6', CLOSED: '#10b981', REJECTED: '#ef4444', RETURNED: '#ef4444' };
     return (
       <>
-        <FilterBar />
         <div className="cg">
           {filtered.length ? filtered.map(r => {
             const out = (r.appAmount || r.amount) - r.clrAmount;
@@ -538,7 +572,7 @@ export const DataCenter = () => {
                   <div style={{ textAlign: 'center', borderTop: '1px solid var(--bdr)', paddingTop: '10px' }}>
                     <div style={{ fontSize: '10px', color: 'var(--tm)' }}>ยอดเบิก</div>
                     <div className="ac-amt">฿{fmt(r.amount)}</div>
-                    {out > 0 && r.status !== 'REJECTED' && <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 700 }}>คงค้าง ฿{fmt(out)}</div>}
+                    {out > 0 && r.status !== 'REJECTED' && r.status !== 'RETURNED' && <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 700 }}>คงค้าง ฿{fmt(out)}</div>}
                   </div>
                 </div>
                 <div className="ac-f"><button className="btn btn-o btn-xs" onClick={(e) => { e.stopPropagation(); handleOpenAdv(r.id); }}>ดูรายละเอียด →</button></div>
@@ -621,8 +655,8 @@ export const DataCenter = () => {
       <div className="ph">
         <div><h2>Advance Data Center</h2><p>{advances.length} รายการ · ศูนย์รวมข้อมูลทั้งหมด</p></div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/advances.csv'; }}>? Excel</button>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/advances.csv'; }}>? CSV</button>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/advances.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>? Excel</button>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/advances.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>? CSV</button>
           <button className="btn btn-p btn-sm" onClick={() => setPage('create')}>+ ใบเบิกใหม่</button>
         </div>
       </div>

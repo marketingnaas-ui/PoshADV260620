@@ -1,317 +1,231 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Palette, CheckSquare, PenTool, Upload, FileSignature, X, Image as ImageIcon } from 'lucide-react';
+import { Settings, Save, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { Toggle } from './shared';
+import { useDocumentTemplates } from '../../components/document-engine/useDocumentTemplates';
+import { DocumentRenderer } from '../../components/document-engine/DocumentRenderer';
+import { FitPageViewer } from '../../components/document-engine/FitPageViewer';
+import { cn } from '../../lib/utils';
 
 export default function DocumentTemplates() {
+  const { publishedTemplates, tplConfig, saveConfig } = useDocumentTemplates();
   const { toast } = useApp();
-  const showToast = (msg: string, type: 'ok' | 'err' = 'ok') => toast(msg, type);
-
-  const [loading, setLoading] = useState(true);
-  const [templates, setTemplates] = useState([
-    { id: 'TPL1', name: 'Advance Request', desc: 'ใบขอเบิกเงินทดรองจ่าย', status: 'Active' },
-    { id: 'TPL2', name: 'Clearance Report', desc: 'ใบเคลียร์เงินทดรองจ่าย', status: 'Active' },
-    { id: 'TPL3', name: 'Expense Claim', desc: 'ใบเบิกค่าใช้จ่าย', status: 'Draft' },
-  ]);
-
-  const [templateForm, setTemplateForm] = useState<any>(null);
   
-  const [tplConfig, setTplConfig] = useState<any>({
-    style: 'Standard',
-    color: '#4f46e5',
-    signatures: 3,
-    sections: {
-      header: true, docInfo: true, employee: true, project: true,
-      table: true, vat: true, wht: false, qrcode: true
-    },
-    tableCols: {
-      desc: true, qty: true, unit: true, price: true, amount: true, vat: false, wht: false, costCenter: false
-    }
-  });
+  const [activeTpl, setActiveTpl] = useState<string | null>(null);
+  const [config, setConfig] = useState(tplConfig);
+  const [isSaving, setIsSaving] = useState(false);
 
+  // Sync when global config loads/changes
   useEffect(() => {
-    fetch('/api/store/document-templates-config')
-      .then(res => res.json())
-      .then(data => {
-        if (data && typeof data === 'object' && !Array.isArray(data)) {
-          if (data.templates) setTemplates(data.templates);
-          if (data.tplConfig) setTplConfig(data.tplConfig);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    setConfig(tplConfig);
+  }, [tplConfig]);
 
-  const handleSaveTemplate = async () => {
-    const updatedTemplates = templates.map(t => t.id === templateForm.id ? { ...t, status: 'Active' } : t);
-    
-    const payload = {
-      templates: updatedTemplates,
-      tplConfig
-    };
-
-    try {
-      const res = await fetch('/api/store/document-templates-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        setTemplates(updatedTemplates);
-        setTemplateForm(null);
-        showToast("Publish Template เรียบร้อยแล้ว", 'ok');
-      } else {
-        throw new Error();
-      }
-    } catch (e) {
-      showToast("เกิดข้อผิดพลาดในการเผยแพร่เทมเพลต", 'err');
-    }
+  const handleSave = async () => {
+    setIsSaving(true);
+    await saveConfig(config);
+    setTimeout(() => {
+      setIsSaving(false);
+      toast('บันทึกการตั้งค่าแม่แบบเอกสารสำเร็จ', 'ok');
+    }, 400);
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading Document Templates...</div>;
+  const templates = [
+    { id: 'advance', name: 'คำขอเบิกเงินทดรอง', desc: 'ADVANCE REQUISITION SHEET', tpl: publishedTemplates.advance },
+    { id: 'clearance', name: 'รายงานเคลียร์เงิน', desc: 'ADVANCE CLEARANCE REPORT', tpl: publishedTemplates.clearance },
+    { id: 'summaryReport', name: 'ใบสรุปยอดเงิน', desc: 'ADVANCE UTILIZATION SUMMARY REPORT', tpl: publishedTemplates.summaryReport },
+  ];
 
-  return (
-    <div className="animate-in fade-in duration-300">
-      <div className="flex justify-between items-end mb-6">
-        <div><h2 className="text-2xl font-bold text-slate-800">Document Templates</h2><p className="text-slate-500 text-sm mt-1">ตั้งค่าและออกแบบหน้าตาเอกสาร PDF (Template Presets & Section Builder)</p></div>
-      </div>
-      
-      <div className="grid grid-cols-3 gap-6">
-        {templates.map((tpl) => (
-          <div key={tpl.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden group hover:border-indigo-400 transition-all flex flex-col">
-            <div className={`h-2 ${tpl.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-            <div className="p-6 flex-1">
-               <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
-                 <FileSignature size={24} />
-               </div>
-               <h3 className="font-bold text-slate-800 text-lg mb-1">{tpl.name}</h3>
-               <p className="text-sm text-slate-500 mb-6">{tpl.desc}</p>
+  if (activeTpl) {
+    const tplDef = templates.find(t => t.id === activeTpl);
+    const templateObject = tplDef?.tpl;
+
+    // Use dummy data to show the layout since AdvanceTemplateRenderer generates content based on it
+    const dummyData = {
+      advance: {
+        id: 'ADV-2026-00100',
+        reqDate: new Date().toISOString(),
+        dueDate: new Date(Date.now() + 86400000*5).toISOString(),
+        empName: 'คุณ ธนากร สวัสดี',
+        empId: 'EMP-042',
+        empDept: 'แผนกการตลาด',
+        projName: 'โครงการปรับปรุงสำนักงาน',
+        clrs: [],
+        total: 15400,
+        items: [
+          { id: 1, d: 'ค่าจัดซื้ออุปกรณ์เครื่องเขียน', cat: 'C01', q: 2, u: 'กล่อง', p: 1500, t: 3000 },
+          { id: 2, d: 'ค่าเดินทางและที่พัก (เชียงใหม่)', cat: 'C02', q: 1, u: 'รายการ', p: 12400, t: 12400 }
+        ]
+      },
+      clearance: {
+        id: 'CLR-2026-00050',
+        advanceId: 'ADV-2026-00100',
+        reqDate: new Date().toISOString(),
+        empName: 'คุณ ธนากร สวัสดี',
+        empId: 'EMP-042',
+        projName: 'โครงการปรับปรุงสำนักงาน',
+        items: [
+          { id: 1, itemDate: new Date().toISOString(), d: 'ค่าจัดซื้ออุปกรณ์เครื่องเขียน', refNo: 'INV-001', vendor: 'OfficeMate', totalAmt: 2800 },
+          { id: 2, itemDate: new Date().toISOString(), d: 'ค่าเดินทางและที่พัก', refNo: 'TX-452', vendor: 'Thai Airways', totalAmt: 12400 }
+        ],
+        advTotal: 15400,
+        totalAmt: 15200,
+        returnAmt: 200,
+        reimburseAmt: 0
+      },
+      summaryReport: {
+        id: 'ADV-2026-00100',
+        empId: 'EMP-042',
+        empName: 'คุณ ธนากร สวัสดี',
+        empDept: 'แผนกการตลาด',
+        projName: 'โครงการปรับปรุงสำนักงาน',
+        total: 15400,
+        clrs: [
+          { id: 'CLR-2026-00050', clrNo: 'CLR-2026-00050', reqDate: new Date().toISOString(), totalAmt: 15200, vatAmount: 560, whtAmount: 240, discountAmount: 0 }
+        ],
+        savNo: 'SAV-2606-100',
+        savDate: new Date().toISOString()
+      }
+    }[activeTpl] || {};
+
+    return (
+      <div className="flex flex-col lg:flex-row h-screen bg-slate-50 font-['Noto_Sans_Thai'] text-[13px] relative overflow-hidden">
+        {/* Left Side: Settings Panel -- Increased left padding with lg:pl-32
+            The sidebar covers the left part. Adding pl-32 gives plenty of space. */}
+        <div className="w-full lg:w-[45%] h-full overflow-y-auto p-6 lg:pl-32 lg:border-r border-slate-200 bg-white z-10 custom-scrollbar shrink-0">
+          
+          <button 
+            onClick={() => setActiveTpl(null)}
+            className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold transition-colors"
+          >
+            <ArrowLeft size={16} /> กลับหน้าเลือกแม่แบบ
+          </button>
+
+          <h1 className="text-xl font-black text-slate-900 tracking-tight mb-2 flex items-center gap-2">
+            <Settings size={20} className="text-orange-600" /> ตั้งค่าแม่แบบเอกสาร
+          </h1>
+          <p className="text-slate-500 mb-8">{tplDef?.name} - {tplDef?.desc}</p>
+
+          <div className="space-y-6">
+            <div className="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-4">
+              <h3 className="font-bold text-slate-800 mb-2">ข้อมูลบริษัท (Company Information)</h3>
+              
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500">ชื่อบริษัท (ภาษาไทย)</span>
+                  <input type="text" className="mt-1 w-full" value={config.companyName || ''} onChange={e => setConfig({...config, companyName: e.target.value})} />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500">ชื่อบริษัท (ภาษาอังกฤษ)</span>
+                  <input type="text" className="mt-1 w-full" value={config.companyEngName || ''} onChange={e => setConfig({...config, companyEngName: e.target.value})} />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500">เลขประจำตัวผู้เสียภาษี</span>
+                  <input type="text" className="mt-1 w-full" value={config.companyTaxId || ''} onChange={e => setConfig({...config, companyTaxId: e.target.value})} />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500">ที่อยู่สำนักงานใหญ่</span>
+                  <textarea className="mt-1 w-full h-20 resize-none" value={config.companyAddress || ''} onChange={e => setConfig({...config, companyAddress: e.target.value})} />
+                </label>
+              </div>
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 mt-auto">
-               <button 
-                  onClick={() => setTemplateForm(tpl)} 
-                  className="w-full py-2.5 bg-white border border-slate-200 text-slate-700 font-bold text-sm rounded-lg hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors flex items-center justify-center gap-2"
-               >
-                 <LayoutDashboard size={16} /> Use Template Wizard
-               </button>
+
+            <div className="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-4">
+              <h3 className="font-bold text-slate-800 mb-2">รูปลักษณ์ (Appearance)</h3>
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500">URL โลโก้กิจการ</span>
+                  <input type="text" className="mt-1 w-full" value={config.logoUrl || ''} onChange={e => setConfig({...config, logoUrl: e.target.value})} />
+                </label>
+                <div className="flex gap-4">
+                  <label className="block flex-1">
+                    <span className="text-xs font-bold text-slate-500">สีหลัก (Primary)</span>
+                    <input type="color" className="mt-1 w-full h-10 p-1 rounded border border-slate-300" value={config.color || '#000000'} onChange={e => setConfig({...config, color: e.target.value})} />
+                  </label>
+                  <label className="block flex-1">
+                    <span className="text-xs font-bold text-slate-500">สีเน้น (Accent)</span>
+                    <input type="color" className="mt-1 w-full h-10 p-1 rounded border border-slate-300" value={config.accentColor || '#E75618'} onChange={e => setConfig({...config, accentColor: e.target.value})} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-10 pt-6 border-t border-slate-200">
+             <button
+               onClick={handleSave}
+               disabled={isSaving}
+               className="w-full py-3 bg-[#E75618] hover:bg-[#B94513] text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+             >
+               {isSaving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
+               บันทึกการตั้งค่า
+             </button>
+             <p className="text-center text-[11px] text-slate-400 mt-3">การเปลี่ยนแปลงคาดไว้ว่าจะมีผลกับทุกเอกสารที่ใช้แม่แบบนี้</p>
+          </div>
+        </div>
+
+        {/* Right Side: Document Preview - increased padding to prevent menu overlap */}
+        <div className="flex-1 bg-slate-200 h-full overflow-y-auto p-4 lg:p-12 lg:pl-12 border-l border-slate-300 custom-scrollbar flex items-start justify-center shadow-inner relative">
+           
+           <FitPageViewer pageWidth={794} pageHeight={1123}>
+             {/* Delete studio config so DocumentRenderer uses AdvanceTemplateRenderer instead of StudioTemplateRenderer */}
+             <DocumentRenderer 
+               template={{ 
+                 ...templateObject, 
+                 studioConfig: undefined, 
+                 config: { 
+                   ...(templateObject?.config || {}), 
+                   ...config, 
+                   elements: undefined 
+                 } 
+               } as any}
+               data={dummyData}
+             />
+           </FitPageViewer>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Main Template Selection Page ---
+  return (
+    <div className="p-8 lg:pl-32 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-10 lg:ml-4 text-left space-y-2">
+         <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+           <Layers className="text-orange-600" size={28} />
+           แม่แบบเอกสารหลัก (Document Templates)
+         </h1>
+         <p className="text-slate-500 font-medium">ดูและตั้งค่าแม่แบบเอกสารที่ใช้พิมพ์จากหน้าจอการทำงาน</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:ml-4">
+        {templates.map(tpl => (
+          <div key={tpl.id} onClick={() => setActiveTpl(tpl.id)} className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-orange-200 transition-all duration-300 overflow-hidden flex flex-col cursor-pointer">
+            <div className="h-44 bg-slate-50 border-b border-slate-100 flex items-center justify-center p-8 overflow-hidden relative">
+               <div className="absolute inset-0 bg-gradient-to-br from-slate-100 to-slate-200 opacity-50" />
+               <div className="w-[140px] h-[200px] bg-white rounded shadow-md border border-slate-200 flex flex-col transition-transform duration-500 group-hover:-translate-y-2 relative z-10 p-2">
+                  <div className="h-4 w-full border-b-2 border-orange-500 mb-2" />
+                  <div className="flex-1 space-y-1">
+                     <div className="h-1 w-1/2 bg-slate-200 rounded" />
+                     <div className="h-1 w-3/4 bg-slate-100 rounded" />
+                     <div className="h-10 w-full mt-2 bg-slate-50 border border-slate-100 rounded" />
+                  </div>
+               </div>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded tracking-wider uppercase">{tpl.desc}</span>
+                <h3 className="text-lg font-bold text-slate-900 mt-2 group-hover:text-orange-600 transition-colors tracking-tight">{tpl.name}</h3>
+              </div>
+              <button 
+                className="w-full py-2.5 bg-slate-50 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-2 hover:bg-slate-900 hover:text-white transition-all"
+              >
+                ดูและปรับแต่งการตั้งค่า <ArrowRight size={14} />
+              </button>
             </div>
           </div>
         ))}
       </div>
-
-      {templateForm && (
-         <div className="fixed inset-0 z-[60] bg-[#f0f2f5] flex flex-col animate-in slide-in-from-bottom-4">
-            <div className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-sm z-10">
-               <div className="flex items-center gap-4">
-                 <button onClick={() => setTemplateForm(null)} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
-                 <div>
-                   <h2 className="font-bold text-slate-800">{templateForm.name}</h2>
-                   <div className="text-[11px] text-slate-500 font-medium">Template Wizard (Level 1)</div>
-                 </div>
-               </div>
-               <div className="flex gap-3">
-                 <button onClick={() => showToast("กำลังสร้างตัวอย่าง PDF ม็อบอัป...", "ok")} className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Preview PDF</button>
-                 <button onClick={handleSaveTemplate} className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg shadow-sm hover:bg-indigo-700 transition-colors">Publish to System</button>
-               </div>
-            </div>
-
-            <div className="flex flex-1 overflow-hidden animate-in fade-in duration-300">
-               <div className="w-[400px] bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
-                 <div className="p-6 space-y-8">
-                   <section>
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2"><LayoutDashboard size={14}/> Layout Preset</h3>
-                     <div className="grid grid-cols-2 gap-3">
-                       {['Standard', 'Construction', 'Accounting', 'Minimal'].map(style => (
-                         <button 
-                           key={style} onClick={() => setTplConfig({...tplConfig, style})}
-                           className={`p-3 border rounded-xl text-left transition-all ${tplConfig.style === style ? 'border-indigo-600 bg-indigo-50 ring-1 ring-indigo-600' : 'border-slate-200 hover:border-indigo-300'}`}
-                         >
-                           <div className={`font-bold text-sm ${tplConfig.style === style ? 'text-indigo-700' : 'text-slate-700'}`}>{style}</div>
-                         </button>
-                       ))}
-                     </div>
-                   </section>
-
-                   <section>
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2"><CheckSquare size={14}/> Section Builder</h3>
-                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1">
-                        {[
-                          { id: 'header', label: 'Company Header' },
-                          { id: 'docInfo', label: 'Document Information' },
-                          { id: 'employee', label: 'Employee Information' },
-                          { id: 'project', label: 'Project Information' },
-                          { id: 'table', label: 'Expense Table' },
-                          { id: 'vat', label: 'VAT Summary' },
-                          { id: 'wht', label: 'WHT Summary' },
-                          { id: 'qrcode', label: 'QR Verification' }
-                        ].map(sec => (
-                          <label key={sec.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors">
-                            <span className="text-sm font-medium text-slate-700">{sec.label}</span>
-                            <Toggle active={(tplConfig.sections as any)[sec.id]} onClick={() => setTplConfig({...tplConfig, sections: {...tplConfig.sections, [sec.id]: !(tplConfig.sections as any)[sec.id]}})} />
-                          </label>
-                        ))}
-                     </div>
-                   </section>
-
-                   <section className={tplConfig.sections.table ? 'block' : 'hidden opacity-50 pointer-events-none'}>
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Expense Table Columns</h3>
-                     <div className="flex flex-wrap gap-2">
-                       {[
-                         { id: 'desc', label: 'Description' }, { id: 'qty', label: 'Qty' }, { id: 'unit', label: 'Unit' }, 
-                         { id: 'price', label: 'Unit Price' }, { id: 'amount', label: 'Amount' }, { id: 'vat', label: 'VAT' }, 
-                         { id: 'wht', label: 'WHT' }, { id: 'costCenter', label: 'Cost Center' }
-                       ].map(col => (
-                         <label key={col.id} className={`px-3 py-1.5 border rounded-lg text-xs font-bold cursor-pointer transition-colors flex items-center gap-2 ${((tplConfig.tableCols as any)[col.id]) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                           <input type="checkbox" className="hidden" checked={(tplConfig.tableCols as any)[col.id]} onChange={() => setTplConfig({...tplConfig, tableCols: {...tplConfig.tableCols, [col.id]: !(tplConfig.tableCols as any)[col.id]}})} />
-                           {col.label}
-                         </label>
-                       ))}
-                     </div>
-                   </section>
-
-                   <section>
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2"><PenTool size={14}/> Signature Flow</h3>
-                     <div className="flex bg-slate-100 p-1 rounded-xl">
-                       {[1, 2, 3, 4].map(num => (
-                         <button 
-                           key={num} onClick={() => setTplConfig({...tplConfig, signatures: num})}
-                           className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${tplConfig.signatures === num ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                         >
-                           {num} Sign{num > 1 ? 's' : ''}
-                         </button>
-                       ))}
-                     </div>
-                   </section>
-
-                   <section>
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Palette size={14}/> Branding Preset</h3>
-                     <div className="space-y-4">
-                       <button onClick={() => showToast("ฟีเจอร์อัปโหลดโลโก้อยู่ระหว่างเชื่อมเครือข่ายทดลอง", "ok")} className="w-full p-3 border border-dashed border-slate-300 rounded-xl text-sm font-bold text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center gap-2 transition-colors"><Upload size={16}/> Upload Logo (PNG/JPG)</button>
-                       <div>
-                         <div className="text-xs text-slate-500 mb-2">Theme Color</div>
-                         <div className="flex gap-3">
-                           {['#0f172a', '#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#e11d48'].map(color => (
-                             <button key={color} onClick={() => setTplConfig({...tplConfig, color})} className={`w-8 h-8 rounded-full shadow-sm border-2 transition-transform ${tplConfig.color === color ? 'border-slate-400 scale-110' : 'border-transparent'}`} style={{ backgroundColor: color }} />
-                           ))}
-                         </div>
-                       </div>
-                     </div>
-                   </section>
-                 </div>
-               </div>
-
-               <div className="flex-1 overflow-y-auto p-10 flex justify-center pb-20">
-                  <div className="w-full max-w-[794px] bg-white shadow-2xl rounded-sm aspect-[1/1.414] border border-slate-300 flex flex-col relative overflow-hidden" style={{ minHeight: '1123px' }}>
-                    <div className="h-3 w-full" style={{ backgroundColor: tplConfig.color }} />
-                    <div className="p-12 flex flex-col h-full">
-                      <div className="flex justify-between items-start mb-8">
-                        {tplConfig.sections.header ? (
-                          <div className="flex gap-4 items-center animate-in fade-in">
-                            <div className="w-16 h-16 rounded bg-slate-100 flex items-center justify-center text-slate-300"><ImageIcon size={24}/></div>
-                            <div><div className="h-5 w-40 bg-slate-200 rounded mb-2"/><div className="h-3 w-64 bg-slate-100 rounded"/></div>
-                          </div>
-                        ) : <div/>}
-                        
-                        {tplConfig.sections.docInfo && (
-                          <div className="text-right animate-in fade-in">
-                             <h1 className="text-2xl font-black mb-2" style={{ color: tplConfig.color }}>{templateForm.name.toUpperCase()}</h1>
-                             <div className="h-4 w-32 bg-slate-100 rounded ml-auto mb-1"/><div className="h-4 w-24 bg-slate-100 rounded ml-auto"/>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className={`grid gap-6 mb-8 ${tplConfig.sections.employee && tplConfig.sections.project ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {tplConfig.sections.employee && (
-                          <div className="border border-slate-200 p-4 rounded-lg animate-in fade-in">
-                            <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: tplConfig.color }}>Employee Info</div>
-                            <div className="space-y-2"><div className="h-3 w-3/4 bg-slate-100 rounded"/><div className="h-3 w-1/2 bg-slate-100 rounded"/><div className="h-3 w-2/3 bg-slate-100 rounded"/></div>
-                          </div>
-                        )}
-                        {tplConfig.sections.project && (
-                          <div className="border border-slate-200 p-4 rounded-lg animate-in fade-in">
-                            <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: tplConfig.color }}>Project Info</div>
-                            <div className="space-y-2"><div className="h-3 w-full bg-slate-100 rounded"/><div className="h-3 w-3/4 bg-slate-100 rounded"/></div>
-                          </div>
-                        )}
-                      </div>
-
-                      {tplConfig.sections.table && (
-                        <div className="mb-6 animate-in fade-in">
-                           <table className="w-full text-left text-xs border-collapse">
-                             <thead>
-                               <tr className="border-y-2 border-slate-800 text-slate-800">
-                                 <th className="py-2">No.</th>
-                                 {tplConfig.tableCols.desc && <th className="py-2">Description</th>}
-                                 {tplConfig.tableCols.qty && <th className="py-2 text-center">Qty</th>}
-                                 {tplConfig.tableCols.unit && <th className="py-2 text-center">Unit</th>}
-                                 {tplConfig.tableCols.price && <th className="py-2 text-right">Unit Price</th>}
-                                 {tplConfig.tableCols.vat && <th className="py-2 text-right">VAT</th>}
-                                 {tplConfig.tableCols.wht && <th className="py-2 text-right">WHT</th>}
-                                 {tplConfig.tableCols.costCenter && <th className="py-2">Cost Center</th>}
-                                 {tplConfig.tableCols.amount && <th className="py-2 text-right">Amount</th>}
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-slate-100">
-                               {[1, 2, 3].map(row => (
-                                 <tr key={row}>
-                                   <td className="py-3 text-slate-400">0{row}</td>
-                                   {tplConfig.tableCols.desc && <td className="py-3"><div className="h-3 w-full bg-slate-100 rounded"/></td>}
-                                   {tplConfig.tableCols.qty && <td className="py-3 text-center"><div className="h-3 w-4 bg-slate-100 rounded mx-auto"/></td>}
-                                   {tplConfig.tableCols.unit && <td className="py-3 text-center"><div className="h-3 w-8 bg-slate-100 rounded mx-auto"/></td>}
-                                   {tplConfig.tableCols.price && <td className="py-3"><div className="h-3 w-12 bg-slate-100 rounded ml-auto"/></td>}
-                                   {tplConfig.tableCols.vat && <td className="py-3"><div className="h-3 w-8 bg-slate-100 rounded ml-auto"/></td>}
-                                   {tplConfig.tableCols.wht && <td className="py-3"><div className="h-3 w-8 bg-slate-100 rounded ml-auto"/></td>}
-                                   {tplConfig.tableCols.costCenter && <td className="py-3"><div className="h-3 w-16 bg-slate-100 rounded"/></td>}
-                                   {tplConfig.tableCols.amount && <td className="py-3"><div className="h-3 w-16 bg-slate-200 rounded ml-auto"/></td>}
-                                 </tr>
-                               ))}
-                             </tbody>
-                           </table>
-                        </div>
-                      )}
-
-                      <div className="flex justify-end gap-6 mb-8 mt-auto">
-                        {tplConfig.sections.vat && (
-                          <div className="w-40 border-t-2 border-slate-200 pt-2 text-right animate-in fade-in">
-                             <div className="text-[10px] text-slate-400 font-bold mb-1">VAT SUMMARY</div><div className="h-4 w-24 bg-slate-100 rounded ml-auto"/>
-                          </div>
-                        )}
-                        {tplConfig.sections.wht && (
-                          <div className="w-40 border-t-2 border-slate-200 pt-2 text-right animate-in fade-in">
-                             <div className="text-[10px] text-slate-400 font-bold mb-1">WHT SUMMARY</div><div className="h-4 w-24 bg-slate-100 rounded ml-auto"/>
-                          </div>
-                        )}
-                        <div className="w-48 border-t-2 pt-2 text-right" style={{ borderColor: tplConfig.color }}>
-                           <div className="text-xs font-bold mb-1" style={{ color: tplConfig.color }}>NET TOTAL</div><div className="h-6 w-32 bg-slate-200 rounded ml-auto"/>
-                        </div>
-                      </div>
-
-                      <div className={`grid gap-4 w-full border-t border-slate-200 pt-8 mt-4`} style={{ gridTemplateColumns: `repeat(${tplConfig.signatures}, minmax(0, 1fr))` }}>
-                        {Array.from({ length: tplConfig.signatures }).map((_, i) => (
-                           <div key={i} className="text-center animate-in fade-in">
-                              <div className="h-12 w-full border-b border-dashed border-slate-300 mb-2 relative">
-                                {i === 0 && <span className="absolute bottom-1 right-2 text-slate-200"><PenTool size={12}/></span>}
-                              </div>
-                              <div className="text-[10px] text-slate-500 font-bold mb-1">
-                                {i === 0 ? 'REQUESTER' : i === tplConfig.signatures - 1 ? 'AUTHORIZER' : `APPROVER 0${i}`}
-                              </div>
-                              <div className="h-2 w-1/2 bg-slate-100 rounded mx-auto"/>
-                           </div>
-                        ))}
-                      </div>
-                      
-                      {tplConfig.sections.qrcode && (
-                        <div className="absolute bottom-6 left-12 opacity-50 flex items-center gap-2 animate-in fade-in">
-                           <div className="w-12 h-12 border-2 border-slate-800 p-1 flex items-center justify-center"><div className="w-full h-full bg-slate-800"/></div>
-                           <div className="text-[8px] text-slate-400 font-mono leading-tight">SCAN TO VERIFY<br/>DOC-2026-X8F9</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-               </div>
-            </div>
-         </div>
-      )}
     </div>
   );
 }
+
+const ArrowRight = ({ size, className }: any) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>;

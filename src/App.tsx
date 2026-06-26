@@ -20,8 +20,14 @@ import { ClearanceCenter } from './pages/ClearanceCenter';
 
 import { AccountingReview } from './pages/AccountingReview';
 import { AdvanceDetail } from './pages/AdvanceDetail';
-import { Reports } from './pages/Reports';
+import { Reports } from './utils/Reports';
 import { DocumentVault } from './pages/SettingsCenter/DocumentVault';
+import { SummaryReport } from './pages/SummaryReport';
+import { DocumentTracking } from './pages/DocumentTracking';
+import { ProjectCostDashboard } from './pages/ProjectCostDashboard';
+import { AuditReportCenter } from './pages/AuditReportCenter';
+import { ClearanceLedger } from './pages/ClearanceLedger';
+import LoginPage from './pages/Login';
 
 const StaffDirectory = React.lazy(() => import('./pages/SettingsCenter/StaffDirectory'));
 const ProjectSettings = React.lazy(() => import('./pages/SettingsCenter/ProjectSettings'));
@@ -33,7 +39,7 @@ const AiControlCenter = React.lazy(() => import('./pages/SettingsCenter/AiContro
 const LineIntegration = React.lazy(() => import('./pages/SettingsCenter/LineIntegration'));
 const GoogleSheetsSync = React.lazy(() => import('./pages/SettingsCenter/GoogleSheetsSync'));
 const DocumentTemplates = React.lazy(() => import('./pages/SettingsCenter/DocumentTemplates'));
-const NumberRunning = React.lazy(() => import('./pages/SettingsCenter/NumberRunning'));
+const CodeManagement = React.lazy(() => import('./pages/SettingsCenter/CodeManagement'));
 const BackupRestore = React.lazy(() => import('./pages/SettingsCenter/BackupRestore'));
 const SystemHealth = React.lazy(() => import('./pages/SettingsCenter/SystemHealth'));
 const AuditCenter = React.lazy(() => import('./pages/SettingsCenter/AuditCenter'));
@@ -44,11 +50,13 @@ const AppContent = () => {
   const userRole = currentUser?.role || 'Employee / Requester';
   const roleObj = userRoles.find(r => r.name === userRole);
   const permissions = roleObj ? (roleObj.permissions || []) : [];
-  const isAdmin = userRole === 'Administrator';
+  const isAdmin = userRole === 'Administrator' || userRole === 'Executive';
 
   const hasPerm = (id: string) => {
     if (isAdmin) return true;
-    if (id === 'dashboard' || id === 'detail' || id === 'create') return true;
+    if (id === 'dashboard' || id === 'project-cost-dashboard' || id === 'detail' || id === 'create' || id === 'summaryReport') return true;
+    const isAccounting = userRole.toLowerCase() === 'accounting' || userRole === 'ฝ่ายบัญชี' || permissions.includes('accounting');
+    if (isAccounting && (id === 'audit-reports' || id === 'clearance-ledger')) return true;
     return permissions.includes(id);
   };
 
@@ -71,6 +79,10 @@ const AppContent = () => {
     );
   }
 
+  if (!currentUser) {
+    return <LoginPage />;
+  }
+
   const AccessRestrictedView = () => (
     <div className="flex flex-col items-center justify-center py-20 px-6 max-w-lg mx-auto text-center bg-white rounded-2xl border border-slate-200 shadow-sm mt-12 animate-in zoom-in-95">
       <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mb-6">
@@ -87,19 +99,14 @@ const AppContent = () => {
           <span className="text-amber-600">Pending Privilege</span>
         </div>
       </div>
-      <button 
-        onClick={() => setCurrentUser({
-          id: 'SEM-0000',
-          name: 'System Administrator',
-          nickname: 'SA',
-          position: 'IT Manager',
-          role: 'Administrator',
-          status: 'ใช้งาน'
-        })}
-        className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-white text-sm rounded-lg shadow-sm transition-colors w-full"
-      >
-        🔑 Switch to SA (Administrator) to Access
-      </button>
+      <div className="flex gap-3">
+        <button 
+          onClick={() => window.history.back()}
+          className="flex-1 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 font-bold text-white text-sm rounded-lg shadow-sm transition-colors"
+        >
+          Go Back
+        </button>
+      </div>
     </div>
   );
 
@@ -114,6 +121,7 @@ const AppContent = () => {
           ) : (
             <>
               {page === 'dashboard' && <Dashboard />}
+              {page === 'project-cost-dashboard' && <ProjectCostDashboard />}
               {page === 'datacenter' && <DataCenter />}
               {page === 'list' && <AdvanceList />}
               {page === 'clearinglist' && <ClearingList />}
@@ -121,9 +129,13 @@ const AppContent = () => {
               {(page === 'approval' || page === 'payment') && <ApprovalCenter />}
               {page === 'clearance' && <ClearanceCenter />}
               {page === 'accounting' && <AccountingReview />}
+              {page === 'document-tracking' && <DocumentTracking />}
+              {page === 'audit-reports' && <AuditReportCenter />}
+              {page === 'clearance-ledger' && <ClearanceLedger />}
               {page === 'detail' && <AdvanceDetail />}
               {page === 'vault' && <DocumentVault />}
               {page === 'reports' && <Reports />}
+              {page === 'summaryReport' && <SummaryReport />}
               
               <React.Suspense fallback={<div>Loading Settings...</div>}>
                 {page === 'staff-directory' && <StaffDirectory />}
@@ -136,7 +148,7 @@ const AppContent = () => {
                 {page === 'line-integration' && <LineIntegration />}
                 {page === 'google-sheet-sync' && <GoogleSheetsSync />}
                 {page === 'document-templates' && <DocumentTemplates />}
-                {page === 'number-running' && <NumberRunning />}
+                {page === 'code-management' && <CodeManagement />}
                 {page === 'backup-restore' && <BackupRestore />}
                 {page === 'system-health' && <SystemHealth />}
                 {page === 'audit-center' && <AuditCenter />}

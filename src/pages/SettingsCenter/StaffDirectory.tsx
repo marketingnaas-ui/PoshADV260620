@@ -1,15 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Download, Plus, Edit2, Trash2, X, Clipboard, Sparkles } from 'lucide-react';
+import { Upload, Download, Plus, Edit2, Trash2, X, Clipboard, Sparkles, RotateCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Badge, getAvatar, SignatureInput } from './shared';
 
 export default function StaffDirectory() {
-  const { toast, masterUsers, saveMasterUsers } = useApp();
+  const { toast, masterUsers, saveMasterUsers, refreshMasterUsers } = useApp();
   const showToast = (msg: string, type: 'ok' | 'err' = 'ok') => toast(msg, type);
-
+  const [profilePictures, setProfilePictures] = useState<Record<string, string>>({});
   const [staffForm, setStaffForm] = useState<any>(null);
+
+  useEffect(() => {
+    refreshMasterUsers();
+    const interval = setInterval(() => {
+      refreshMasterUsers();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    masterUsers.forEach(u => {
+      if (u.lineId && u.lineId.startsWith('U') && !profilePictures[u.lineId]) {
+        fetch(`/api/line/user-profile/${u.lineId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.pictureUrl) {
+              setProfilePictures(prev => ({ ...prev, [u.lineId!]: data.pictureUrl }));
+            }
+          })
+          .catch(err => console.error(err));
+      }
+    });
+  }, [masterUsers]);
   
-  const [availableRoles, setAvailableRoles] = useState<string[]>(['Administrator', 'Accounting', 'Employee / Requester']);
+  const [availableRoles, setAvailableRoles] = useState<string[]>(['Administrator', 'Executive', 'Accounting', 'Employee / Requester']);
 
   useEffect(() => {
     fetch('/api/store/roles')
@@ -28,18 +51,6 @@ export default function StaffDirectory() {
   const [importText, setImportText] = useState('');
   const [parsedImportRows, setParsedImportRows] = useState<any[]>([]);
 
-  const handleSaveStaff = async () => {
-    if (!staffForm.name) return showToast("กรุณากรอกชื่อพนักงาน", "err");
-    const isExisting = masterUsers.find(s => s.id === staffForm.id);
-    const nextList = isExisting 
-      ? masterUsers.map(s => s.id === staffForm.id ? staffForm : s)
-      : [...masterUsers, staffForm];
-    
-    await saveMasterUsers(nextList);
-    setStaffForm(null);
-    showToast("บันทึกข้อมูลพนักงานเรียบร้อยแล้ว", "ok");
-  };
-
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`ลบข้อมูล ${name}?`)) {
       await saveMasterUsers(masterUsers.filter(s => s.id !== id));
@@ -47,17 +58,10 @@ export default function StaffDirectory() {
     }
   };
 
-  // Helper to generate dynamic ID SEM-xxxx
-  const handleOpenAddStaff = () => {
-    const prefix = 'SEM-';
-    const maxIdx = masterUsers.reduce((max, u) => {
-      const parsedNum = parseInt(u.id.replace(prefix, ''), 10);
-      return isNaN(parsedNum) ? max : Math.max(max, parsedNum);
-    }, 0);
-    const nextId = `${prefix}${String(maxIdx + 1).padStart(4, '0')}`;
-
+  const handleOpenAddStaff = async () => {
     setStaffForm({
-      id: nextId,
+      isNew: true,
+      id: 'กำลังสร้างรหัส...',
       name: '',
       nickname: '',
       position: 'พนักงาน',
@@ -70,6 +74,34 @@ export default function StaffDirectory() {
       status: 'ใช้งาน',
       pin: ''
     });
+
+    try {
+      const res = await fetch('/api/generate-employee-code', { method: 'POST' });
+      const data = await res.json();
+      if (data.code) {
+        setStaffForm(prev => prev ? ({ ...prev, id: data.code }) : null);
+      }
+    } catch (err) {
+      showToast("Error generating employee code", "err");
+    }
+  };
+
+  const handleSaveStaff = async () => {
+    if (!staffForm.name) return showToast("กรุณากรอกชื่อพนักงาน", "err");
+    
+    let formToSave = { ...staffForm };
+    if (formToSave.isNew) {
+      delete formToSave.isNew;
+    }
+
+    const isExisting = masterUsers.find(s => s.id === formToSave.id);
+    const nextList = isExisting 
+      ? masterUsers.map(s => s.id === formToSave.id ? formToSave : s)
+      : [...masterUsers, formToSave];
+    
+    await saveMasterUsers(nextList);
+    setStaffForm(null);
+    showToast("บันทึกข้อมูลพนักงานเรียบร้อยแล้ว", "ok");
   };
 
 
@@ -106,12 +138,18 @@ export default function StaffDirectory() {
       return;
     }
     const lines = text.split('\n');
-    const prefix = 'SEM-';
+    const currentYear = new Date().getFullYear();
+    const prefix = `SEM-${currentYear}-`;
     
-    // Determine last index dynamically to pre-calculate continuous incremental IDs
+    // Determine last index dynamically to pre-calculate continuous incremental IDs matching SEM-{YYYY}-{###}
     let currentMaxIdx = masterUsers.reduce((max, u) => {
-      const parsedNum = parseInt(u.id.replace(prefix, ''), 10);
-      return isNaN(parsedNum) ? max : Math.max(max, parsedNum);
+      if (u.id && u.id.startsWith(prefix)) {
+        const parts = u.id.split('-');
+        const lastPart = parts[parts.length - 1];
+        const parsedNum = parseInt(lastPart, 10);
+        return isNaN(parsedNum) ? max : Math.max(max, parsedNum);
+      }
+      return max;
     }, 0);
 
     const parsed: any[] = [];
@@ -138,7 +176,7 @@ export default function StaffDirectory() {
         const role = cleanedParts[6] || 'Employee / Requester';
         
         parsed.push({
-          id: `${prefix}${String(currentMaxIdx).padStart(4, '0')}`,
+          id: `${prefix}${String(currentMaxIdx).padStart(3, '0')}`,
           name,
           nickname: '',
           position,
@@ -203,6 +241,7 @@ export default function StaffDirectory() {
       <div className="flex justify-between items-end mb-6">
         <div><h2 className="text-2xl font-bold text-slate-800">Staff Directory</h2><p className="text-slate-500 text-sm mt-1">จัดการพนักงาน, ข้อมูลธนาคาร และลายเซ็น</p></div>
         <div className="flex gap-2">
+          <button onClick={() => { refreshMasterUsers(); showToast('รีเฟรชข้อมูลพนักงานสำเร็จ', 'ok'); }} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors" title="รีเฟรชข้อมูล"><RotateCw size={16} /> Refresh</button>
           <button onClick={() => setImportModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50"><Upload size={16} /> Bulk Import</button>
           <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50"><Download size={16} /> Export CSV</button>
           <button onClick={handleOpenAddStaff} className="flex items-center gap-2 px-4 py-2 bg-[#f4ac5c] hover:bg-[#e09b4b] rounded-lg text-sm font-bold text-white shadow-sm transition-colors"><Plus size={16} /> Add Employee</button>
@@ -216,17 +255,26 @@ export default function StaffDirectory() {
           <tbody className="divide-y divide-slate-100">
             {masterUsers.map((staff) => (
               <tr key={staff.id} className="hover:bg-amber-50/10 group align-middle">
-                <td className="p-4 text-center"><img src={getAvatar(staff.name, staff.lineId)} alt="avatar" className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-slate-200 shadow-sm hover:scale-110 transition-transform duration-200 cursor-zoom-in" /></td>
+                <td className="p-4 text-center"><img src={profilePictures[staff.lineId || ''] || staff.linePictureUrl || getAvatar(staff.name, staff.lineId)} alt="avatar" className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-slate-200 shadow-sm hover:scale-110 transition-transform duration-200 cursor-zoom-in" /></td>
                 <td className="p-4">
                   <div className="font-mono text-xs text-[#f4ac5c] font-bold mb-0.5">
                     {staff.id} {staff.pin ? `· 🔑 [PIN: ${staff.pin}]` : '· (ไม่มีระบบรหัส)'}
                   </div>
-                  <div className="font-bold text-slate-800">{staff.name}</div>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                    <span>{staff.name}</span>
+                    {staff.lineId && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#06C755]/10 text-[#06C755] text-[10px] font-bold border border-[#06C755]/20 animate-pulse" title={`LINE ID: ${staff.lineId}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#06C755]" />
+                        LINE Connected
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="p-4 text-slate-600">{staff.position || staff.dept}</td>
                 <td className="p-4">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-block border ${
                     staff.role === 'Administrator' ? 'bg-red-50 text-red-700 border-red-100' :
+                    staff.role === 'Executive' ? 'bg-amber-50 text-amber-700 border-amber-100' :
                     staff.role === 'Accounting' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
                     'bg-slate-50 text-slate-600 border-slate-200'
                   }`}>
@@ -259,16 +307,29 @@ export default function StaffDirectory() {
             <div className="p-6 overflow-y-auto grid grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Employee ID</label>
+                    {staffForm.isNew ? (
+                       <input type="text" value="Auto-generated" readOnly className="w-full px-3 py-2 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-sm text-slate-400 italic" />
+                    ) : (
+                       <input type="text" value={staffForm.id} readOnly className="w-full px-3 py-2 bg-slate-100 border rounded-lg text-sm text-slate-500 font-mono" />
+                    )}
+                  </div>
                   <div className="flex-[2]">
                     <label className="block text-xs font-bold text-slate-500 mb-1">Full Name (ชื่อ-นามสกุล) *</label>
                     <input type="text" value={staffForm.name || ''} onChange={e => setStaffForm({...staffForm, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-[2]">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Position</label>
+                    <input type="text" value={staffForm.position || ''} onChange={e => setStaffForm({...staffForm, position: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </div>
                   <div className="flex-1">
-                    <label className="block text-xs font-bold text-slate-500 mb-1 text-amber-600">รหัสลงนาม (PIN / Code) *</label>
-                    <input type="text" placeholder="รหัสผ่านทำธุรกรรม" value={staffForm.pin || ''} onChange={e => setStaffForm({...staffForm, pin: e.target.value})} className="w-full px-3 py-2 border-2 border-amber-200 rounded-lg text-sm font-mono text-center" />
+                    <label className="block text-xs font-bold text-slate-500 mb-1 text-amber-600">รหัสลงนาม (PIN) *</label>
+                    <input type="text" placeholder="รหัสผ่าน" value={staffForm.pin || ''} onChange={e => setStaffForm({...staffForm, pin: e.target.value})} className="w-full px-3 py-2 border-2 border-amber-200 rounded-lg text-sm font-mono text-center" />
                   </div>
                 </div>
-                <div><label className="block text-xs font-bold text-slate-500 mb-1">Position</label><input type="text" value={staffForm.position || ''} onChange={e => setStaffForm({...staffForm, position: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">LINE ID</label><input type="text" value={staffForm.lineId || ''} onChange={e => setStaffForm({...staffForm, lineId: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 <div className="flex gap-3">
                   <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Bank</label><input type="text" value={staffForm.bank || ''} onChange={e => setStaffForm({...staffForm, bank: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>

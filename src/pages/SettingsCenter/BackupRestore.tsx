@@ -26,14 +26,34 @@ export default function BackupRestore() {
 
   const handleCreateBackup = () => {
     showToast("เริ่มดาวน์โหลดไฟล์ Backup ล่าสุด...");
-    window.location.href = '/api/export/app-backup.json';
+    window.location.href = `/api/export/app-backup.json?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`;
+  };
+
+  const handleClearAllData = async () => {
+    if (!confirm("คุณต้องการล้างข้อมูลการทำรายการทั้งหมดใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้")) return;
+    
+    showToast("กำลังล้างข้อมูลโปรดรอสักครู่...");
+    try {
+      const response = await fetch('/api/store/clear-all', { method: 'POST' });
+      if (response.ok) {
+        showToast("ล้างข้อมูลสำเร็จ ระบบจะรีโหลดใหม่...");
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        throw new Error('Failed to clear data');
+      }
+    } catch (e) {
+      showToast("เกิดข้อผิดพลาดในการล้างข้อมูล");
+    }
   };
 
   return (
     <div className="animate-in fade-in duration-300">
        <div className="flex justify-between items-end mb-6">
         <div><h2 className="text-2xl font-bold text-slate-800">Backup & Restore</h2><p className="text-slate-500 text-sm mt-1">สำรองข้อมูล Master Data และกู้คืนระบบผ่าน Firebase Store</p></div>
-        <button onClick={handleCreateBackup} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2"><DatabaseBackup size={16}/> Create & Download Backup</button>
+        <div className="flex gap-2">
+            <button onClick={handleClearAllData} className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2"><DatabaseBackup size={16}/> ล้างข้อมูลการทำรายการทั้งหมด</button>
+            <button onClick={handleCreateBackup} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2"><DatabaseBackup size={16}/> Create & Download Backup</button>
+        </div>
       </div>
       
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6 flex items-center justify-between">

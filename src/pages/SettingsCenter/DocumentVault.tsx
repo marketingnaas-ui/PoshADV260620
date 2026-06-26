@@ -7,6 +7,9 @@ import { useApp } from '../../context/AppContext';
 import { fmt, fmtD, UserAvt } from '../../lib/utils';
 import { fileLabel, fileUrl, isStoredFile } from '../../lib/files';
 import { StoredFile } from '../../types';
+import { useDocumentTemplates } from '../../components/document-engine/useDocumentTemplates';
+import { DocumentRenderer } from '../../components/document-engine/DocumentRenderer';
+import { FitPageViewer } from '../../components/document-engine/FitPageViewer';
 
 function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(' ');
@@ -14,10 +17,11 @@ function cn(...classes: (string | undefined | null | false)[]) {
 
 export const DocumentVault = () => {
   const { advances, toast, masterCategories, openFilePreview, masterUsers, approvalMatrix } = useApp();
+  const { publishedTemplates } = useDocumentTemplates();
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [viewerOpen, setViewerOpen] = useState<{ advId: string; type: 'PDF' | 'SLIP' | 'OCR' | 'CLR' | 'TAX' | 'RECEIPT' | 'COMBINED_PDF' } | null>(null);
+  const [viewerOpen, setViewerOpen] = useState<{ advId: string; type: 'PDF' | 'SLIP' | 'OCR' | 'CLR' | 'TAX' | 'RECEIPT' | 'COMBINED_PDF' | 'SUMMARY_REPORT' } | null>(null);
   const [storedFiles, setStoredFiles] = useState<StoredFile[]>([]);
   const [vaultDocs, setVaultDocs] = useState<any[]>([]);
   
@@ -119,6 +123,10 @@ export const DocumentVault = () => {
     return vaultDocs.filter(doc => doc.advId === activeAdv.id);
   }, [activeAdv, vaultDocs]);
 
+  const slipUrl = useMemo(() => {
+    return activeAdv?.pay?.fileUrl || activeAdv?.pay?.slipFileUrl || (activeAdv?.pay as any)?.fileUrl;
+  }, [activeAdv]);
+
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500" style={{ minHeight: '100%' }}>
       
@@ -131,7 +139,7 @@ export const DocumentVault = () => {
           <p>Centralized corporate repository, OCR archive, and financial ledger vault</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/vault-docs.csv'; }}>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/vault-docs.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>
             📁 Export Vault Index
           </button>
         </div>
@@ -344,7 +352,7 @@ export const DocumentVault = () => {
                 </div>
 
                 {/* FILES FOR COMPLETED / CLOSED CLEARANCE CASE */}
-                {activeAdv.clrs && activeAdv.clrs.length > 0 ? (
+                {((activeAdv.clrs && activeAdv.clrs.length > 0) || (activeAdv.receipts && activeAdv.receipts.length > 0) || activeAdv.status === 'CLOSED' || activeAdv.status === 'CLEARED_BY_EMPLOYEE' || activeAdv.status === 'WAITING_CLEARANCE') ? (
                   <>
                     {/* FILE 4: CLEARANCE VOUCHER SHEET */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f8fafc', border: '1.5px solid var(--bdr)', borderRadius: '8px' }}>
@@ -373,10 +381,26 @@ export const DocumentVault = () => {
                         <button className="btn btn-g btn-xs" onClick={() => setViewerOpen({ advId: activeAdv.id, type: 'RECEIPT' })}>🔍 เปิดดู</button>
                       </div>
                     </div>
+
+                    {/* FILE 6: SUMMARY REPORT RAV PDF */}
+                    {activeAdv.status === 'CLOSED' && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#fffbeb', border: '1.5px solid #fcd34d', borderRadius: '8px' }}>
+                        <div className="fl" style={{ gap: '10px' }}>
+                          <FileText size={18} style={{ color: 'var(--p)' }} />
+                          <div>
+                            <div style={{ fontSize: '12.5px', fontWeight: 700 }}>{activeAdv.ravNo || `RAV-2606-${activeAdv.id.split('-')[2]}`}-SummaryReport.pdf</div>
+                            <span style={{ fontSize: '10px', color: 'var(--tm)' }}>Advance Utilization Summary Report (รายงานสรุปการใช้เงินทดรองจ่ายสะสม)</span>
+                          </div>
+                        </div>
+                        <div className="fl" style={{ gap: '6px' }}>
+                          <button className="btn btn-g btn-xs" onClick={() => setViewerOpen({ advId: activeAdv.id, type: 'SUMMARY_REPORT' })}>🔍 เปิดดู</button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f8fafc', border: '1.5px dashed var(--bdr)', borderRadius: '8px', color: 'var(--ts)', fontSize: '11px' }}>
-                    <span>ใบส่งเคลียร์เงิน & สมุดภาษีซื้อ (CLR/RECEIPT Voucher) จะเกิดขึ้นในประวัติระบบสแกนตรวจสอบ Clearance Center V3 ทันทีหลังจากส่งเคลียร์ยอด</span>
+                    <span>ใบส่งเคลียร์ยอดจะถูกสร้างและบันทึกลงใน Document Vault อัตโนมัติเมื่อพนักงานทำการส่งเคลียร์ยอด และเอกสารตรวจสอบจะถูกสร้างเมื่อบัญชีกดปิดยอด</span>
                   </div>
                 )}
 
@@ -397,7 +421,7 @@ export const DocumentVault = () => {
                         </div>
                       </div>
                     ))}
-                    {activeVaultDocs.filter(doc => doc.fileUrl && !activeStoredFiles.some(file => file.id === doc.fileId)).map(doc => (
+                    {activeVaultDocs.filter(doc => (doc.fileUrl || doc.isClearanceReport) && !activeStoredFiles.some(file => file.id === doc.fileId)).map(doc => (
                       <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f8fafc', border: '1.5px solid var(--bdr)', borderRadius: '8px', gap: '10px' }}>
                         <div className="fl" style={{ gap: '10px', minWidth: 0 }}>
                           <FileText size={18} style={{ color: '#8b5cf6' }} />
@@ -408,6 +432,8 @@ export const DocumentVault = () => {
                         </div>
                         {doc.isCombinedPdf || doc.type === 'ใบขอเบิกควบสลิปโอนเงิน' ? (
                           <button className="btn btn-g btn-xs" onClick={() => setViewerOpen({ advId: doc.advId, type: 'COMBINED_PDF' })}>🔍 เปิดดูสำเนา</button>
+                        ) : doc.isClearanceReport ? (
+                          <button className="btn btn-g btn-xs" onClick={() => setViewerOpen({ advId: doc.advId, type: 'CLEARANCE_REPORT', docData: doc })}>🔍 เปิดดูรายงาน</button>
                         ) : (
                           <button type="button" className="btn btn-g btn-xs" onClick={() => openFilePreview(doc.fileUrl)}>👁️ Preview</button>
                         )}
@@ -476,6 +502,19 @@ export const DocumentVault = () => {
                   <button className="btn btn-o btn-sm" onClick={handlePrint}>
                     <Printer size={14} /> พิมพ์เอกสาร
                   </button>
+                  {viewerOpen.type === 'SUMMARY_REPORT' && (
+                    <button className="btn btn-g btn-sm" onClick={() => {
+                      const element = document.createElement("a");
+                      const file = new Blob([printAreaRef.current?.innerHTML || ''], {type: 'text/html'});
+                      element.href = URL.createObjectURL(file);
+                      element.download = `${activeAdv.ravNo || 'RAV-REPORT'}.html`;
+                      document.body.appendChild(element);
+                      element.click();
+                      toast('📥 ดาวน์โหลดรายงานสรุปเป็น HTML/PDF แล้ว', 'ok');
+                    }} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Download size={14} /> ดาวน์โหลดรายงาน PDF
+                    </button>
+                  )}
                   <button 
                     onClick={() => setViewerOpen(null)}
                     style={{
@@ -528,13 +567,13 @@ export const DocumentVault = () => {
                       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', marginBottom: '24px', fontSize: '12px', border: '1px solid var(--bdr)', padding: '16px', borderRadius: '8px', background: '#fafbfc' }}>
                         <div>
                           <div style={{ margin: '4px 0' }}><b>ชื่อผู้ขอเบิกเงิน:</b> {activeAdv.empName}</div>
-                          <div style={{ margin: '4px 0' }}><b>ฝ่าย/หน่วยงาน:</b> {activeAdv.empDept}</div>
-                          <div style={{ margin: '4px 0' }}><b>โครงการรับชำระ:</b> {activeAdv.pName}</div>
-                          <div style={{ margin: '4px 0' }}><b>รายละเอียดหมายเหตุ:</b> {activeAdv.desc}</div>
+                          <div style={{ margin: '4px 0' }}><b>ตำแหน่ง:</b> {activeAdv.empDept}</div>
+                          <div style={{ margin: '4px 0' }}><b>โครงการ:</b> {activeAdv.pName}</div>
+                          <div style={{ margin: '4px 0' }}><b>หมายเหตุ:</b> {activeAdv.desc}</div>
                         </div>
                         <div style={{ textAlign: 'right', borderLeft: '1px solid var(--bdr)', paddingLeft: '20px' }}>
                           <div style={{ margin: '4px 0' }}><b>วันที่ทำรายการ:</b> {fmtD(activeAdv.reqDate)}</div>
-                          <div style={{ margin: '4px 0' }}><b>วันกำหนดวันประเมิน:</b> {fmtD(activeAdv.dueDate)}</div>
+                          <div style={{ margin: '4px 0' }}><b>กำหนดการเคลียร์เอกสาร:</b> {fmtD(activeAdv.reqDate ? (() => { try { const d = new Date(activeAdv.reqDate); if (!isNaN(d.getTime())) { d.setDate(d.getDate() + 30); return d.toISOString(); } } catch (e) {} return activeAdv.dueDate; })() : activeAdv.dueDate)}</div>
                           {activeAdv.appDate && <div style={{ margin: '4px 0' }}><b>วันที่ผู้บังคับอนุมัติ:</b> {fmtD(activeAdv.appDate)}</div>}
                           <div><b>สถานะเบิกจ่าย:</b> {activeAdv.status}</div>
                         </div>
@@ -544,11 +583,11 @@ export const DocumentVault = () => {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginTop: '16px' }}>
                         <thead>
                           <tr style={{ background: '#f8fafc', borderBottom: '2px solid var(--bdr)' }}>
-                            <th style={{ padding: '10px', textAlign: 'left' }}># รายละเอียดรายการสิ่งของขออนุมัติ</th>
+                            <th style={{ padding: '10px', textAlign: 'left' }}>รายละเอียดรายการขออนุมัติ</th>
                             <th style={{ padding: '10px', textAlign: 'center', width: '80px' }}>หมวดบัญชี</th>
                             <th style={{ padding: '10px', textAlign: 'right', width: '60px' }}>จำนวน</th>
-                            <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อนาม</th>
-                            <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ยอดรวมย่อย</th>
+                            <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อหน่วย</th>
+                            <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ราคารวม</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -630,13 +669,13 @@ export const DocumentVault = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', marginBottom: '24px', fontSize: '12px', border: '1px solid var(--bdr)', padding: '16px', borderRadius: '8px', background: '#fafbfc' }}>
                           <div>
                             <div style={{ margin: '4px 0' }}><b>ชื่อผู้ขอเบิกเงิน:</b> {activeAdv.empName}</div>
-                            <div style={{ margin: '4px 0' }}><b>ฝ่าย/หน่วยงาน:</b> {activeAdv.empDept}</div>
-                            <div style={{ margin: '4px 0' }}><b>โครงการรับชำระ:</b> {activeAdv.pName}</div>
-                            <div style={{ margin: '4px 0' }}><b>รายละเอียดหมายเหตุ:</b> {activeAdv.desc}</div>
+                            <div style={{ margin: '4px 0' }}><b>ตำแหน่ง:</b> {activeAdv.empDept}</div>
+                            <div style={{ margin: '4px 0' }}><b>โครงการ:</b> {activeAdv.pName}</div>
+                            <div style={{ margin: '4px 0' }}><b>หมายเหตุ:</b> {activeAdv.desc}</div>
                           </div>
                           <div style={{ textAlign: 'right', borderLeft: '1px solid var(--bdr)', paddingLeft: '20px' }}>
                             <div style={{ margin: '4px 0' }}><b>วันที่ทำรายการ:</b> {fmtD(activeAdv.reqDate)}</div>
-                            <div style={{ margin: '4px 0' }}><b>วันกำหนดวันประเมิน:</b> {fmtD(activeAdv.dueDate)}</div>
+                            <div style={{ margin: '4px 0' }}><b>กำหนดการเคลียร์เอกสาร:</b> {fmtD(activeAdv.reqDate ? (() => { try { const d = new Date(activeAdv.reqDate); if (!isNaN(d.getTime())) { d.setDate(d.getDate() + 30); return d.toISOString(); } } catch (e) {} return activeAdv.dueDate; })() : activeAdv.dueDate)}</div>
                             {activeAdv.appDate && <div style={{ margin: '4px 0' }}><b>วันที่ผู้บังคับอนุมัติ:</b> {fmtD(activeAdv.appDate)}</div>}
                             <div><b>สถานะเบิกจ่าย:</b> {activeAdv.status}</div>
                           </div>
@@ -644,12 +683,12 @@ export const DocumentVault = () => {
 
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginTop: '16px' }}>
                           <thead>
-                            <tr style={{ background: '#f8fafc', borderBottom: '2px solid var(--bdr)' }}>
-                              <th style={{ padding: '10px', textAlign: 'left' }}># รายละเอียดรายการสิ่งของขออนุมัติ</th>
+                            <tr style={{ background: '#f8fafc', borderBottom: '2.5px solid var(--bdr)' }}>
+                              <th style={{ padding: '10px', textAlign: 'left' }}>รายละเอียดรายการขออนุมัติ</th>
                               <th style={{ padding: '10px', textAlign: 'center', width: '80px' }}>หมวดบัญชี</th>
                               <th style={{ padding: '10px', textAlign: 'right', width: '60px' }}>จำนวน</th>
-                              <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อนาม</th>
-                              <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ยอดรวมย่อย</th>
+                              <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อหน่วย</th>
+                              <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ราคารวม</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -756,6 +795,35 @@ export const DocumentVault = () => {
                             <span>วันที่ตรวจสอบทำรายการโอน: {activeAdv.pay?.date ? fmtD(activeAdv.pay.date) : '18 มิ.ย. 26'}</span>
                           </div>
                         </div>
+
+                        {/* Render real uploaded bank slip image if exists */}
+                        {slipUrl && (
+                          <div style={{ 
+                            border: '1.5px solid #cbd5e1', 
+                            borderRadius: '16px', 
+                            padding: '12px', 
+                            background: '#f8fafc',
+                            maxWidth: '380px',
+                            width: '100%',
+                            margin: '24px auto 0 auto',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                          }}>
+                            <img 
+                              src={slipUrl} 
+                              alt="หลักฐานสลิปโอนเงินจริง" 
+                              referrerPolicy="no-referrer"
+                              style={{ 
+                                maxHeight: '400px', 
+                                maxWidth: '100%', 
+                                borderRadius: '10px', 
+                                objectFit: 'contain' 
+                              }} 
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -793,6 +861,35 @@ export const DocumentVault = () => {
                           <span>วันที่ตรวจสอบทำรายการโอน: {activeAdv.pay?.date ? fmtD(activeAdv.pay.date) : '18 มิ.ย. 26'}</span>
                         </div>
                       </div>
+
+                      {/* Render real uploaded bank slip image if exists */}
+                      {slipUrl && (
+                        <div style={{ 
+                          border: '1.5px solid #cbd5e1', 
+                          borderRadius: '16px', 
+                          padding: '12px', 
+                          background: '#f8fafc',
+                          maxWidth: '380px',
+                          width: '100%',
+                          margin: '20px auto 0 auto',
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                        }}>
+                          <img 
+                            src={slipUrl} 
+                            alt="หลักฐานสลิปโอนเงินจริง" 
+                            referrerPolicy="no-referrer"
+                            style={{ 
+                              maxHeight: '400px', 
+                              maxWidth: '100%', 
+                              borderRadius: '10px', 
+                              objectFit: 'contain' 
+                            }} 
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -808,7 +905,7 @@ export const DocumentVault = () => {
                         <pre>{JSON.stringify({
                           documentId: activeAdv.id,
                           documentType: "ADVANCE_RECONCILIATION",
-                          generationSource: "Gemini_AI_2.5_Flash",
+                          generationSource: "Gemini_AI_3.5_Flash",
                           metadata: {
                             requestor: activeAdv.empName,
                             department: activeAdv.empDept,
@@ -836,120 +933,13 @@ export const DocumentVault = () => {
 
                   {/* VIEW TYPE 4: RECONCILED CLEARANCE VOUCHER DETAIL */}
                   {viewerOpen.type === 'CLR' && (
-                    <div>
-                      <div className="header" style={{ borderBottom: '2.5px solid var(--warn)', paddingBottom: '16px', marginBottom: '24px' }}>
-                        <div className="flb">
-                          <div>
-                            <span style={{ fontSize: '24px', fontWeight: 950, color: '#c2410c' }}>Clearance Advance Form</span>
-                            <div style={{ fontSize: '11px', color: 'var(--ts)', marginTop: '4px' }}>ใบสรุปรายการค่าใช้จ่ายเงินทดรองจ่าย</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '14px', fontWeight: 900, color: '#c2410c' }}>CLR-{activeAdv.id.replace('ADV-', '')}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--ts)' }}>หลักฐานล้างบัญชียืมเงินลูกหนี้เงินทดรอง</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', marginBottom: '24px', fontSize: '12px', border: '1px solid var(--bdr)', padding: '16px', borderRadius: '8px', background: '#fafbfc' }}>
-                        <div>
-                          <div style={{ margin: '4px 0' }}><b>อ้างอิงแฟ้มยืมเงินดั้งเดิม:</b> {activeAdv.id}</div>
-                          <div style={{ margin: '4px 0' }}><b>ฝ่าย/หน่วยงาน:</b> {activeAdv.empDept}</div>
-                          <div style={{ margin: '4px 0' }}><b>ชื่อผู้ยืมเงินทดรองสะสม:</b> {activeAdv.empName}</div>
-                          <div style={{ margin: '4px 0' }}><b>สรุปผลล้างบัญชี:</b> แผนกบัญชีและสอบทานได้ตัดยอดใบเสร็จและใบกำกับเสร็จสิ้นแล้ว</div>
-                        </div>
-                        <div style={{ textAlign: 'right', borderLeft: '1px solid var(--bdr)', paddingLeft: '20px' }}>
-                          <div style={{ margin: '4px 0' }}><b>วงเงินทดรองจ่าย:</b> ฿{fmt(activeAdv.appAmount)}</div>
-                          <div style={{ margin: '4px 0' }}><b>ยอดส่งใบเสร็จ:</b> ฿{fmt(activeAdv.clrAmount)}</div>
-                          <div style={{ margin: '4px 0' }}><b>ยอดรวมสุทธิในเอกสารเคลียร์:</b> ฿{fmt(activeAdv.clrAmount)}</div>
-                          <div style={{ margin: '4px 0' }}><b>ส่วนต่าง:</b> { (activeAdv.appAmount - activeAdv.clrAmount) >= 0 ? '+' : '' }{fmt(activeAdv.appAmount - activeAdv.clrAmount)}</div>
-                          <div><b>สถานะใบเคลียร์บิล:</b> <CheckCircle2 size={13} style={{ display: 'inline', color: 'var(--ok)', verticalAlign: 'middle', marginRight: '4px' }} /> APPROVED & SECURED</div>
-                        </div>
-                      </div>
-
-                      <h4 style={{ fontSize: '12px', fontWeight: 800, margin: '14px 0 6px', textTransform: 'uppercase' }}>ประวัติลำดับชุดบันทึกยอดเคลียร์ (Clearance Logs):</h4>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                        <thead>
-                          <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--bdr)' }}>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>วันเปิดทำชุดรายการ</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>เลขบิลการเคลียร์ (CLR ID)</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>รายละเอียดหมายเหตุ / ผู้รับเหมาสินค้า</th>
-                            <th style={{ padding: '8px', textAlign: 'right' }}>ตัดจำหน่ายสุทธิ</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {activeAdv.clrs && activeAdv.clrs.length > 0 ? (
-                            activeAdv.clrs.map((clr, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px solid var(--bdr)' }}>
-                                <td style={{ padding: '8px' }}>{fmtD(clr.date)} (ครั้งที่ {idx + 1})</td>
-                                <td style={{ padding: '8px', fontWeight: 'bold' }}>{clr.id}</td>
-                                <td style={{ padding: '8px', color: 'var(--ts)' }}>{clr.note}</td>
-                                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--ok)' }}>฿{fmt(clr.amount)}</td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={4} style={{ padding: '20px', textAlign: 'center', color: 'var(--tm)' }}>
-                                ไม่พบข้อมูลประวัติเคลียร์ยอดเงินสะสม
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-
-                      {/* Summary Box */}
-                      <div style={{ margin: '20px 0', padding: '15px', border: '2px solid var(--ok)', borderRadius: '8px', background: '#f0fdf4' }}>
-                        <div style={{ fontWeight: 'bold', color: 'var(--ok)', marginBottom: '10px' }}>สรุปผลการเคลียร์เอกสาร</div>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <button style={{ flex: 1, padding: '15px', background: '#3b82f6', color: 'white', borderRadius: '8px', fontWeight: 'bold', fontSize: '18px', border: 'none', cursor: 'default' }}>
-                            ยอดเบิกทั้งหมด: ฿{fmt(activeAdv.appAmount)}
-                          </button>
-                          <button style={{ flex: 1, padding: '15px', background: '#10b981', color: 'white', borderRadius: '8px', fontWeight: 'bold', fontSize: '18px', border: 'none', cursor: 'default' }}>
-                            ยอดเคลียร์ปัจจุบัน: ฿{fmt(activeAdv.clrAmount)}
-                          </button>
-                        </div>
-                        <div style={{ marginTop: '10px', fontSize: '13px', textAlign: 'center', color: 'var(--tx)' }}>
-                          {activeAdv.status === 'PARTIAL' ? "สถานะ: รอเคลียร์เอกสารบางส่วนเพิ่มเติม" : "สถานะ: ปิดบัญชีแล้ว"}
-                        </div>
-                      </div>
-
-                      {/* Signatures for audited finance */}
-                      <div className="footer-signature" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '48px', fontSize: '11px', borderTop: '1px solid var(--bdr)', paddingTop: '24px' }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <span style={{ color: 'var(--ts)' }}>ตำแหน่ง</span>
-                          <div style={{ height: '35px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: 'var(--p)' }}>
-                            {activeAdv.empName}
-                          </div>
-                          <span className="sig-line" style={{ display: 'block', borderTop: '1px dashed #94a3b8', margin: '4px auto', width: '130px' }}></span>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <span style={{ color: 'var(--ts)' }}>ตำแหน่ง</span>
-                          <div style={{ height: '35px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                            {(() => {
-                              const approverUser = masterUsers?.find(u => activeAdv.appBy && activeAdv.appBy.includes(u.name));
-                              const sigImage = activeAdv.appBySignature || approverUser?.signatureData;
-                              if (sigImage) {
-                                return (
-                                  <img 
-                                    src={sigImage} 
-                                    alt="Approver Signature" 
-                                    style={{ maxHeight: '50px', objectFit: 'contain' }} 
-                                    referrerPolicy="no-referrer"
-                                  />
-                                );
-                              }
-                              return <span style={{ color: 'var(--ok)' }}>{activeAdv.appBy || 'APPROVED'}</span>;
-                            })()}
-                          </div>
-                          <span className="sig-line" style={{ display: 'block', borderTop: '1px dashed #94a3b8', margin: '4px auto', width: '130px' }}></span>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <span style={{ color: 'var(--ts)' }}>Auditor (ผู้ตรวจสอบบัญชีบริษัท)</span>
-                          <div style={{ height: '35px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: 'var(--p)', fontSize: '13px' }}>
-                            <ShieldCheck size={16} style={{ display: 'inline', color: 'var(--p)', marginRight: '4px' }} /> SECURED BY GL
-                          </div>
-                          <span className="sig-line" style={{ display: 'block', borderTop: '1px dashed #94a3b8', margin: '4px auto', width: '130px' }}></span>
-                        </div>
-                      </div>
+                    <div style={{ textAlign: 'left', display: 'flex', justifyContent: 'center', background: '#f1f5f9', padding: '20px', borderRadius: '8px' }}>
+                      <FitPageViewer width={750}>
+                        <DocumentRenderer 
+                          template={publishedTemplates.TPL2 || publishedTemplates.clearance} 
+                          data={activeAdv} 
+                        />
+                      </FitPageViewer>
                     </div>
                   )}
 
@@ -971,21 +961,64 @@ export const DocumentVault = () => {
                           </div>
                         </div>
 
-                        {activeAdv.clrs && activeAdv.clrs.map((clr, index) => (
+                        {(activeAdv.clrs || activeAdv.receipts || []).map((clr: any, index: number) => (
                           <div key={index} style={{ border: '1.5px solid var(--bdr)', borderRadius: '8px', padding: '14px', position: 'relative' }}>
                             <div className="flb" style={{ borderBottom: '1px solid var(--bdr)', paddingBottom: '6px', marginBottom: '8px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--tx)' }}>🧾 ใบรับสินค้า / ใบเสร็จเลขที่ {clr.id}</span>
+                              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--tx)' }}>🧾 ใบรับสินค้า / ใบเสร็จเลขที่ {clr.id || clr.receiptNo || index + 1}</span>
                               <span style={{ fontSize: '11px', color: 'var(--p)', fontWeight: 'bold' }}>OCR Accurately Verified</span>
                             </div>
                             <div style={{ fontSize: '12.5px', color: '#475569' }}>
-                              <div>• ผู้มอบสินค้า/ผู้ขาย: <b>สยามโฮมโปรสโตร์ ค้าส่งวัสดุก่อสร้าง</b></div>
-                              <div>• สรุปรายการสิ่งของ: <b>{clr.note}</b></div>
-                              <div>• ยอดเงินรวมใบเสร็จตามเล่มภาษีสุทธิ: <b style={{ color: 'var(--p)' }}>฿{fmt(clr.amount)}</b></div>
+                              <div>• ผู้มอบสินค้า/ผู้ขาย: <b>{clr.vendorName || 'สยามโฮมโปรสโตร์ ค้าส่งวัสดุก่อสร้าง'}</b></div>
+                              <div>• สรุปรายการสิ่งของ: <b>{clr.note || (clr.items ? clr.items.length + ' รายการ' : 'ค่าวัสดุก่อสร้างและค่าบริการ')}</b></div>
+                              <div>• ยอดเงินรวมใบเสร็จตามเล่มภาษีสุทธิ: <b style={{ color: 'var(--p)' }}>฿{fmt(clr.amount || (clr.items || []).reduce((acc: any, curr: any) => acc + curr.netAmount, 0)) || '0.00'}</b></div>
                               <div>• สถานะพิจารณาเอกสารแนบ: <b>APPROVED (เอกสารแนบมีความละเอียดชัดสมบูรณ์)</b></div>
                             </div>
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* VIEW TYPE 6: SUMMARY REPORT RAV TEMPLATE RENDERING */}
+                  {viewerOpen.type === 'SUMMARY_REPORT' && (
+                    <div style={{ textAlign: 'left' }}>
+                      <DocumentRenderer 
+                        template={publishedTemplates.TPL3 || publishedTemplates.summaryReport} 
+                        data={{
+                          reportNo: activeAdv.ravNo || `RAV-2606-${String(parseInt(activeAdv.id.split('-')[2] || '0', 10)).padStart(3, '0')}`,
+                          reportDate: activeAdv.ravDate ? fmtD(activeAdv.ravDate) : fmtD(new Date().toISOString()),
+                          id: activeAdv.id,
+                          employeeName: activeAdv.empName,
+                          employeeDept: activeAdv.empDept,
+                          projectName: activeAdv.pName,
+                          appAmount: activeAdv.appAmount,
+                          clrAmount: activeAdv.clrAmount,
+                          status: activeAdv.status,
+                          receipts: activeAdv.receipts || [],
+                          clrs: activeAdv.clrs || [],
+                          categorySummary: activeAdv.items ? [
+                            { name: 'ค่าโครงการ / ตัววัสดุ', amount: activeAdv.clrAmount * 0.5 },
+                            { name: 'ค่าเดินทาง ตรวจความพร้อม', amount: activeAdv.clrAmount * 0.3 },
+                            { name: 'ค่าอาหารเบ็ดเตล็ดส่วนต่าง', amount: activeAdv.clrAmount * 0.2 }
+                          ] : undefined
+                        }} 
+                      />
+                    </div>
+                  )}
+
+                  {viewerOpen.type === 'CLEARANCE_REPORT' && viewerOpen.docData && (
+                    <div style={{ textAlign: 'left', display: 'flex', justifyContent: 'center', background: '#f1f5f9', padding: '20px', borderRadius: '8px' }}>
+                      <FitPageViewer width={750}>
+                        <DocumentRenderer 
+                          template={publishedTemplates.clearance || { id: 'clr-std', name: 'Standard Clearance', type: 'CLEARANCE', version: '2.0', status: 'published', createdAt: new Date().toISOString() } as any} 
+                          data={{
+                            ...activeAdv,
+                            items: viewerOpen.docData.itemsSnap || [],
+                            vaultData: viewerOpen.docData.vaultData,
+                            projectFullName: activeAdv?.projectName === 'KCL' ? "K'Chang Lumlukka" : activeAdv?.projectName
+                          }} 
+                        />
+                      </FitPageViewer>
                     </div>
                   )}
 

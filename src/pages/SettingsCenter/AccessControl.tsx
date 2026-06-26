@@ -39,9 +39,10 @@ export default function AccessControl() {
           setRoles(data);
         } else {
           const defaultRoles = [
-            { id: 'R1', name: 'Administrator', users: 3, type: 'Full Access', desc: 'เข้าถึงได้ทุกระบบและการตั้งค่า', password: 'admin123', permissions: AVAILABLE_PERMISSIONS.map(p => p.id), lineUserIds: 'U991823abf77cda8, U23a4b5c6d', linePermissions: ['line_approve_req', 'line_reject_req', 'line_view_balance', 'line_get_statements', 'line_receive_status'] },
-            { id: 'R2', name: 'Accounting', users: 8, type: 'Custom', desc: 'สิทธิ์เฉพาะโมดูลการเงินและการตรวจสอบบัญชี', password: 'acc123', permissions: ['dashboard', 'datacenter', 'list', 'clearinglist', 'accounting', 'vault', 'reports'], lineUserIds: 'U118833ad88f76fa', linePermissions: ['line_view_balance', 'line_get_statements', 'line_receive_status'] },
-            { id: 'R3', name: 'Employee / Requester', users: 131, type: 'Custom', desc: 'ขอเบิกเงินทดรองจ่ายและส่งงานเคลียร์ค่าใช้จ่าย', password: 'emp123', permissions: ['dashboard', 'list', 'clearinglist', 'create'], lineUserIds: '', linePermissions: ['line_receive_status'] },
+            { id: 'R1', name: 'Administrator', users: 3, type: 'Full Access', desc: 'เข้าถึงได้ทุกระบบและการตั้งค่า', permissions: AVAILABLE_PERMISSIONS.map(p => p.id), lineUserIds: 'U991823abf77cda8, U23a4b5c6d', linePermissions: ['line_approve_req', 'line_reject_req', 'line_view_balance', 'line_get_statements', 'line_receive_status'] },
+            { id: 'R4', name: 'Executive', users: 1, type: 'Full Access', desc: 'ผู้บริหารระดับสูง อนุมัติเอกสารในระบบและผ่าน LINE มีสิทธิ์เข้าถึงเสมือนแอดมิน', permissions: AVAILABLE_PERMISSIONS.map(p => p.id), lineUserIds: 'U23a4b5c6d', linePermissions: ['line_approve_req', 'line_reject_req', 'line_view_balance', 'line_get_statements', 'line_receive_status'] },
+            { id: 'R2', name: 'Accounting', users: 8, type: 'Custom', desc: 'สิทธิ์เฉพาะโมดูลการเงินและการตรวจสอบบัญชี', permissions: ['dashboard', 'datacenter', 'list', 'clearinglist', 'accounting', 'vault', 'reports'], lineUserIds: 'U118833ad88f76fa', linePermissions: ['line_view_balance', 'line_get_statements', 'line_receive_status'] },
+            { id: 'R3', name: 'Employee / Requester', users: 131, type: 'Custom', desc: 'ขอเบิกเงินทดรองจ่ายและส่งงานเคลียร์ค่าใช้จ่าย', permissions: ['dashboard', 'list', 'clearinglist', 'create'], lineUserIds: '', linePermissions: ['line_receive_status'] },
           ];
           setRoles(defaultRoles);
         }

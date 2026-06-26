@@ -1,19 +1,29 @@
 import React, { useEffect, useRef } from 'react';
-import { LayoutDashboard, Database, List, PlusCircle, CheckSquare, CreditCard, CornerRightDown, FileText, BarChart2, FolderArchive, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Database, List, PlusCircle, CheckSquare, CreditCard, CornerRightDown, FileText, BarChart2, FolderArchive, ChevronLeft, ChevronRight, PieChart, History } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SETTINGS_MENU } from '../config/settingsMenu';
+import logoImg from '../assets/images/regenerated_image_1782327208256.png';
 
 export const Sidebar = () => {
-  const { advances, page, setPage, sidebarOpen, sidebarCollapsed, setSidebarCollapsed, syncStatus, currentUser, userRoles } = useApp();
+  const { advances, page, setPage, sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, syncStatus, currentUser, userRoles } = useApp();
   
   const userRole = currentUser?.role || 'Employee / Requester';
-  const roleObj = userRoles.find(r => r.name === userRole);
-  const permissions = roleObj ? (roleObj.permissions || []) : [];
-  const isAdmin = userRole === 'Administrator';
+  const lowerRole = userRole.toLowerCase();
+  
+  let permissions: string[] = [];
+  if (lowerRole === 'administrator' || lowerRole === 'executive' || lowerRole === 'admin') {
+    permissions = ['dashboard', 'project-cost-dashboard', 'datacenter', 'list', 'clearinglist', 'create', 'approval', 'clearance', 'accounting', 'vault', 'reports', 'settings', 'staff-directory', 'project-settings', 'categories', 'access-control', 'pin-full-access', 'approval-workflow', 'ai-control', 'line-integration', 'google-sheet-sync', 'document-templates', 'number-running', 'backup-restore', 'system-health', 'audit-center'];
+  } else if (lowerRole === 'accounting' || lowerRole === 'ฝ่ายบัญชี') {
+    permissions = ['dashboard', 'datacenter', 'list', 'clearinglist', 'accounting', 'vault', 'reports'];
+  } else {
+    // Regular employee / requester: only see dashboard, datacenter, create, clearance, vault
+    permissions = ['dashboard', 'datacenter', 'create', 'clearance', 'vault'];
+  }
+  
+  const isAdmin = lowerRole === 'administrator' || lowerRole === 'executive' || lowerRole === 'admin';
 
   const hasPerm = (id: string) => {
     if (isAdmin) return true;
-    if (id === 'dashboard' || id === 'detail') return true;
     return permissions.includes(id);
   };
 
@@ -24,7 +34,9 @@ export const Sidebar = () => {
   
   const cList = advances.filter(r => !['CLOSED', 'REJECTED', 'ปิดยอด', 'ไม่อนุมัติ', 'ปฏิเสธ'].includes(r.status)).length;
   const cApp = advances.filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'รออนุมัติ').length;
-  const cPay = advances.filter(r => r.status === 'WAITING_TRANSFER' || r.status === 'รอโอน').length;
+  const isTransferStatus = (s: string) => s === 'WAITING_TRANSFER' || s === 'รอโอน' || s === 'รอโอนเงิน' || s === 'รอโอนเงินทดรอง' || s === 'รอโอนเงินทดรองจ่าย';
+  const hasPayment = (r: any) => !!(r.pay && Object.keys(r.pay).length > 0) || !!r.tempSlip;
+  const cPay = advances.filter(r => isTransferStatus(r.status) && !hasPayment(r)).length;
   const cClr = advances.filter(r => r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด').length;
   const cAcc = advances.filter(r => r.status === 'WAITING_CLEARANCE' || r.status === 'รอเคลียร์' || r.status === 'รอเคลียร์ยอด').length;
   const cVault = advances.filter(r => ['WAITING_TRANSFER', 'WAITING_CLEARANCE', 'CLOSED', 'รอโอน', 'รอเคลียร์', 'รอเคลียร์ยอด', 'ปิดยอด'].includes(r.status)).length;
@@ -114,12 +126,12 @@ export const Sidebar = () => {
   );
 
   return (
-    <aside 
-      className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`} 
-      id="sidebar"
-      onClick={handleSidebarClick}
-      onMouseMove={handleSidebarClick}
-    >
+    <>
+      <aside 
+        className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} 
+        id="sidebar"
+        onClick={handleSidebarClick}
+      >
       <div 
         className="slogo cursor-pointer" 
         onClick={(e) => {
@@ -132,12 +144,17 @@ export const Sidebar = () => {
       >
         <div className="flex items-center gap-2 overflow-hidden w-full">
           <div className="slogo-ic flex-shrink-0">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <img 
+              src={logoImg} 
+              alt="POSH MANOR Logo" 
+              className="w-6 h-6 object-contain" 
+              referrerPolicy="no-referrer" 
+            />
           </div>
           {!sidebarCollapsed && (
             <div className="flex-1 min-w-0" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="slogo-t truncate text-[14px]">ClearAdvance</div>
-              <div className="slogo-s truncate text-[10px]">PRO V2 · Phase 2</div>
+              <div className="slogo-t truncate text-[14px]">POSH MANOR</div>
+              <div className="slogo-s truncate text-[10px]">Advance System</div>
             </div>
           )}
           {!sidebarCollapsed && (
@@ -158,6 +175,7 @@ export const Sidebar = () => {
       <nav className="snav">
         {!sidebarCollapsed && <div className="snav-sec">ภาพรวม</div>}
         <NavItem id="dashboard" label="Executive Dashboard" icon={LayoutDashboard} />
+        <NavItem id="project-cost-dashboard" label="ต้นทุนโครงการ" icon={PieChart} />
         
         {(!sidebarCollapsed && (hasPerm('datacenter') || hasPerm('list') || hasPerm('clearinglist') || hasPerm('create'))) && <div className="snav-sec">ข้อมูล</div>}
         {hasPerm('datacenter') && <NavItem id="datacenter" label="Advance Data Center" icon={Database} />}
@@ -170,11 +188,15 @@ export const Sidebar = () => {
         {hasPerm('clearance') && <NavItem id="clearance" label="Clearance Center" icon={CornerRightDown} badge={cClr} activeSpecial={true} />}
 
         {hasPerm('accounting') && <NavItem id="accounting" label="Accounting Review" icon={CheckSquare} badge={cAcc} />}
+        {hasPerm('accounting') && <NavItem id="document-tracking" label="Document Tracking" icon={FileText} badge={advances.filter(a => a.trackingRecord && a.trackingRecord.status !== 'Completed' && a.trackingRecord.status !== 'Ready For Accounting' && a.trackingRecord.status !== 'ERP Posted').length} />}
         
         {(!sidebarCollapsed && (hasPerm('detail') || hasPerm('vault') || hasPerm('reports'))) && <div className="snav-sec">รายงาน & ตั้งค่า</div>}
         {hasPerm('detail') && <NavItem id="detail" label="Advance Detail" icon={FileText} />}
+        {hasPerm('accounting') && <NavItem id="audit-reports" label="ระบบตรวจสอบใบเคลียร์" icon={FileText} />}
+        {hasPerm('accounting') && <NavItem id="clearance-ledger" label="ประวัติสะสมใบเคลียร์" icon={History} />}
         {hasPerm('vault') && <NavItem id="vault" label="Document Vault" icon={FolderArchive} badge={cVault} />}
         {hasPerm('reports') && <NavItem id="reports" label="Reports & Analytics" icon={BarChart2} />}
+        {hasPerm('summaryReport') && <NavItem id="summaryReport" label="Summary Report (TPL3)" icon={FileText} />}
 
         {SETTINGS_MENU.map((group) => {
           if (!hasGroupPerm(group.items)) return null;
@@ -196,5 +218,14 @@ export const Sidebar = () => {
         </div>
       )}
     </aside>
+      
+      {/* Mobile Overlay to fix overlapping perception and allow closing by clicking outside */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[90] lg:hidden animate-in fade-in duration-300" 
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+    </>
   );
 };

@@ -4,8 +4,10 @@ import { useApp } from '../../context/AppContext';
 import { Badge, getAvatar } from './shared';
 
 export default function ProjectSettings() {
-  const { toast, masterProjects, saveMasterProjects } = useApp();
+  const { toast, masterProjects, saveMasterProjects, loading } = useApp();
   const showToast = (msg: string) => toast(msg, 'ok');
+
+  if (loading) return <div>Loading...</div>;
 
   const [projectForm, setProjectForm] = useState<any>(null);
 
@@ -16,10 +18,49 @@ export default function ProjectSettings() {
 
   const handleSaveProject = async () => {
     if (!projectForm.name) return showToast("กรุณากรอกชื่อโครงการ");
-    const isExisting = masterProjects.find(p => p.code === projectForm.code);
+
+    let formToSave = { ...projectForm };
+    
+    // If no code is provided, try to auto-generate it
+    if (!formToSave.code) {
+      if (formToSave.isNew) {
+        try {
+          const res = await fetch('/api/generate-project-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectName: formToSave.name, overridePrefix: formToSave.short || undefined })
+          });
+          const data = await res.json();
+          if (data.code) {
+            formToSave.code = data.code;
+            formToSave.id = data.code;
+            if (!formToSave.short) {
+               formToSave.short = formToSave.code.split('-')[0];
+            }
+          }
+        } catch (err) {
+          showToast("Error generating project code");
+          return;
+        }
+      } else {
+        return showToast("กรุณากรอกรหัสโครงการ");
+      }
+    } else {
+      formToSave.id = formToSave.code;
+      if (!formToSave.short) {
+        formToSave.short = formToSave.code.substring(0, 4).toUpperCase();
+      }
+    }
+
+    const originalCode = formToSave._originalCode || formToSave.code;
+    delete formToSave._originalCode;
+    delete formToSave.isNew;
+
+    const isExisting = masterProjects.find(p => p.code === originalCode);
     const nextList = isExisting 
-       ? masterProjects.map(p => p.code === projectForm.code ? projectForm : p)
-       : [...masterProjects, projectForm];
+       ? masterProjects.map(p => p.code === originalCode ? formToSave : p)
+       : [...masterProjects, formToSave];
+       
     await saveMasterProjects(nextList);
     setProjectForm(null);
     showToast("บันทึกข้อมูลโครงการเรียบร้อยแล้ว");
@@ -139,7 +180,7 @@ export default function ProjectSettings() {
           >
             <Upload size={16} /> นำเข้าข้อมูล
           </button>
-          <button onClick={() => setProjectForm({ code: `PRJ-2606-${String(masterProjects.length + 1).padStart(3, '0')}`, short: '', name: '', owner: 'สมมาตร มีสุข', start: '01/01/2026', end: '31/12/2026', budget: '100000', status: 'Active' })} className="flex items-center gap-2 px-4 py-2 bg-[#f4ac5c] hover:bg-[#e09b4b] rounded-lg text-sm font-bold text-white shadow-sm transition-colors"><Plus size={16} /> Add Project</button>
+          <button onClick={() => setProjectForm({ isNew: true, short: '', name: '', owner: 'สมมาตร มีสุข', start: '01/01/2026', end: '31/12/2026', budget: '100000', status: 'Active' })} className="flex items-center gap-2 px-4 py-2 bg-[#f4ac5c] hover:bg-[#e09b4b] rounded-lg text-sm font-bold text-white shadow-sm transition-colors"><Plus size={16} /> Add Project</button>
         </div>
       </div>
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -163,7 +204,7 @@ export default function ProjectSettings() {
                 <td className="p-4 text-center"><Badge type={proj.status === 'Active' ? 'active' : proj.status === 'Completed' ? 'gray' : 'warning'}>{proj.status || 'Active'}</Badge></td>
                 <td className="p-4 text-center">
                    <div className="flex justify-center gap-2 transition-opacity">
-                    <button onClick={() => setProjectForm(proj)} className="p-1.5 text-slate-800 hover:text-[#f4ac5c] bg-white border border-slate-300 rounded shadow-sm" title="แก้ไข"><Edit2 size={16} /></button>
+                    <button onClick={() => setProjectForm({ ...proj, _originalCode: proj.code })} className="p-1.5 text-slate-800 hover:text-[#f4ac5c] bg-white border border-slate-300 rounded shadow-sm" title="แก้ไข"><Edit2 size={16} /></button>
                     <button onClick={() => handleDelete(proj.code, proj.name)} className="p-1.5 text-slate-800 hover:text-rose-600 bg-white border border-slate-300 rounded shadow-sm" title="ลบ"><Trash2 size={16} /></button>
                   </div>
                 </td>
@@ -180,8 +221,17 @@ export default function ProjectSettings() {
              <div className="p-5 border-b border-slate-100 flex justify-between bg-slate-50 rounded-t-2xl"><h3 className="font-bold text-slate-800">Project Data</h3><button onClick={() => setProjectForm(null)}><X size={20}/></button></div>
              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                 <div className="flex gap-4">
-                   <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Project Code</label><input type="text" value={projectForm.code || ''} readOnly className="w-full px-3 py-2 bg-slate-100 border rounded-lg text-sm font-mono text-slate-500" /></div>
-                   <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Short Code</label><input type="text" value={projectForm.short || ''} onChange={e=>setProjectForm({...projectForm, short: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                   <div className="flex-1 text-slate-800">
+                     <label className="block text-xs font-bold text-slate-500 mb-1">Project Code</label>
+                     <input 
+                       type="text" 
+                       value={projectForm.code || ''} 
+                       onChange={e => setProjectForm({ ...projectForm, code: e.target.value })} 
+                       placeholder="กรอกรหัสโครงการ เช่น PRJ-2026-001"
+                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-800 focus:outline-none focus:border-[#f4ac5c]" 
+                     />
+                   </div>
+                   <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Prefix Override (Optional)</label><input type="text" value={projectForm.short || ''} onChange={e=>setProjectForm({...projectForm, short: e.target.value})} placeholder="e.g. WEL" className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Project Name</label><input type="text" value={projectForm.name || ''} onChange={e=>setProjectForm({...projectForm, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Project Owner</label><input type="text" value={projectForm.owner || ''} onChange={e=>setProjectForm({...projectForm, owner: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>

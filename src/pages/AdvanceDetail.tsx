@@ -3,13 +3,46 @@ import { useApp } from '../context/AppContext';
 import { useAdvanceActions } from '../components/AdvanceDetailView';
 import { fmt, fmtD, SBadge, overdue, now } from '../lib/utils';
 import { fileLabel, fileUrl } from '../lib/files';
+import { exportAdvanceToSheets } from '../lib/sheets';
+import { FileSpreadsheet, LogIn, ExternalLink } from 'lucide-react';
 
 export const AdvanceDetail = () => {
-  const { advances, toast, setPage, masterUsers, masterCategories, openFilePreview } = useApp();
+  const { 
+    advances, 
+    toast, 
+    setPage, 
+    masterUsers, 
+    masterCategories, 
+    openFilePreview,
+    googleUser,
+    googleToken,
+    loginGoogle,
+    isLoggingInGoogle
+  } = useApp();
   const [detailId, setDetailId] = useState(advances[0]?.id || '');
+  const [isExporting, setIsExporting] = useState(false);
   
   const r = advances.find(x => x.id === detailId) || advances[0];
   const actions = useAdvanceActions(r?.id || '');
+
+  const handleSheetsExport = async () => {
+    if (!googleToken) {
+      void loginGoogle();
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const ss = await exportAdvanceToSheets(googleToken, r);
+      toast(`✅ Export สำเร็จ! สร้างไฟล์แล้ว`, 'success');
+      window.open(`https://docs.google.com/spreadsheets/d/${ss.spreadsheetId}/edit`, '_blank');
+    } catch (err: any) {
+      console.error(err);
+      toast('❌ Export ล้มเหลว: ' + err.message, 'err');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   if (!r) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--tm)' }}>เลือกรายการจาก Advance List</div>;
 
@@ -75,6 +108,27 @@ export const AdvanceDetail = () => {
             {advances.map(x => <option key={x.id} value={x.id}>{x.id} · {x.empName}</option>)}
           </select>
           <button className="btn btn-o btn-sm" onClick={() => { window.print(); toast(`🖨 เปิดหน้าต่างพิมพ์ ${r.id}`); }}>🖨</button>
+          
+          <button 
+            className={`btn btn-sm ${googleUser ? 'btn-p' : 'btn-o'}`} 
+            onClick={handleSheetsExport}
+            disabled={isExporting || isLoggingInGoogle}
+            title={googleUser ? 'ส่งออกข้อมูลไปยัง Google Sheets' : 'เชื่อมต่อ Google Sheets'}
+          >
+            {isExporting ? (
+              <span className="animate-spin">🔄</span>
+            ) : googleUser ? (
+              <div className="fl" style={{ gap: '6px' }}>
+                <FileSpreadsheet size={16} /> 
+                <span className="hid-mob">Export to Sheets</span>
+              </div>
+            ) : (
+              <div className="fl" style={{ gap: '6px' }}>
+                <LogIn size={16} />
+                <span className="hid-mob">Connect Sheets</span>
+              </div>
+            )}
+          </button>
         </div>
       </div>
       <div className="g2" style={{ alignItems: 'start' }}>

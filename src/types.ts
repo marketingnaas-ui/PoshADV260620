@@ -22,7 +22,7 @@ export interface StoredFile {
 
 export type AdvanceAttachment = string | StoredFile;
 
-export type Status = 'PENDING_APPROVAL' | 'WAITING_TRANSFER' | 'WAITING_CLEARANCE' | 'CLEARED_BY_EMPLOYEE' | 'CLOSED' | 'REJECTED' | 'บันทึกร่าง' | 'รออนุมัติ' | 'DRAFT';
+export type Status = 'PENDING_APPROVAL' | 'WAITING_TRANSFER' | 'WAITING_CLEARANCE' | 'CLEARED_BY_EMPLOYEE' | 'CLOSED' | 'REJECTED' | 'RETURNED' | 'บันทึกร่าง' | 'รออนุมัติ' | 'DRAFT' | 'DRAFT_CLEARANCE' | 'PARTIAL_CLEARANCE' | 'WAITING_PHYSICAL_DOCS';
 
 export interface ReceiptItem {
   id: string;
@@ -115,6 +115,28 @@ export interface AccountingTransaction {
   aiTrustScore: number;
 }
 
+export interface DocumentTrackingItem {
+  type: string;
+  attached: boolean;
+  physical: boolean;
+  receivedDate: string | null;
+  remark?: string;
+}
+
+export interface TrackingRecord {
+  id: string;
+  status: 'Not Started' | 'Partially Received' | 'Completed' | 'Overdue' | 'Ready For Accounting' | 'ERP Posted';
+  documents: DocumentTrackingItem[];
+  timeline: {
+    date: string;
+    action: string;
+    status: 'completed' | 'waiting' | 'overdue';
+  }[];
+  dueDate: string;
+  completedDate?: string;
+  completedBy?: string;
+}
+
 export interface Advance {
   id: string; empId: string; empName: string; empDept: string;
   pIds: string[]; pName: string; reqDate: string; dueDate: string;
@@ -129,4 +151,6 @@ export interface Advance {
   reviewStatus?: 'PENDING' | 'PARTIAL' | 'REJECTED_PARTIAL' | 'APPROVED' | 'READY';
   reviewAuditLogs?: AuditLogItem[];  // Local audit trail for this advance review flow
   overrideReason?: string;
+  trackingRecord?: TrackingRecord;
 }
+

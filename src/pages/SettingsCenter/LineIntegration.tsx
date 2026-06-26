@@ -1,373 +1,266 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, Settings2, X, Save, RefreshCw, Link2, Bot, Bell, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
+import { 
+  MessageSquare, 
+  Settings2,
+  Save, 
+  RefreshCw, 
+  Bell, 
+  Info,
+  Copy,
+  Target
+} from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { Badge } from './shared';
+
+interface LineConfig {
+  channelId: string;
+  channelSecret: string;
+  channelAccessToken: string;
+  groupId: string;
+  enabled: boolean;
+  automationEnabled: boolean;
+  status: 'CONNECTED' | 'DISCONNECTED';
+}
 
 export default function LineIntegration() {
   const { toast } = useApp();
   const [loading, setLoading] = useState(true);
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [templateForm, setTemplateForm] = useState<any>(null);
   
-  // Binding configuration states
-  const [lineConfig, setLineConfig] = useState<any>({
-    groupNotifyToken: 'LN-tok_9918ab77fc8d8e',
-    groupName: 'LINE กลุ่มผู้อนุมัติ (ClearAdvance Approval Grp)',
-    groupEnabled: true,
-    oaChannelId: '2004819741',
-    oaChannelSecret: 'e39da92497645f65bc7291a82c46f140',
-    oaAccessToken: 'ya29.a0ARWks88_K9VwK6g-SDFASFSDFASDAF8897fsf73hfdh-Kds8',
-    oaWebhookUrl: 'https://ais-dev-l2yrslhsiwp6phbg7gjjwg-230368814102.asia-east1.run.app/api/line/webhook',
-    oaBotName: 'ClearAdvance Official Bot',
-    oaStatus: 'CONNECTED'
+  // LINE Messaging API Configuration
+  const [lineConfig, setLineConfig] = useState<LineConfig>({
+    channelId: '',
+    channelSecret: '',
+    channelAccessToken: '',
+    groupId: '',
+    enabled: true,
+    automationEnabled: true,
+    status: 'DISCONNECTED'
   });
 
   const [savingConfig, setSavingConfig] = useState(false);
-  const [testingGroup, setTestingGroup] = useState(false);
+
+  // Webhook URL (computed)
+  const webhookUrl = `${window.location.origin}/api/line/webhook`;
 
   useEffect(() => {
-    // Fetch template data
-    const fetchTemplates = fetch('/api/store/line-templates')
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          setTemplates(data);
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Fetch Config
+        const cfgRes = await fetch('/api/store/line-messaging-config');
+        if (cfgRes.ok) {
+          const cfgData = await cfgRes.json();
+          if (cfgData && typeof cfgData === 'object' && !Array.isArray(cfgData)) {
+            setLineConfig(prev => ({ ...prev, ...cfgData }));
+          }
         } else {
-          setTemplates([
-            { id: 1, name: 'Advance Approved', status: 'Active', text: 'สวัสดีคุณ {name}, รายการขอเบิก {doc_ref} ได้รับการอนุมัติเรียบร้อยแล้วจำนวน {amount} บาท' },
-            { id: 2, name: 'Clearance Rejected', status: 'Active', text: 'สวัสดีคุณ {name}, รายการเคลียร์เงิน {doc_ref} ถูกปฏิเสธการอนุมัติเนื่องจากเอกสารไม่ครบถ้วน' },
-            { id: 3, name: 'Reminder: Overdue', status: 'Active', text: 'แจ้งเตือน: รายการขอเบิกเงิน {doc_ref} เกินกำหนดเวลาชำระเงินเคลียร์แล้ว กรุณาดำเนินการส่งรายงานเคลียร์เงินโดยเร็ว' }
-          ]);
+          console.warn('Failed to fetch LINE config:', cfgRes.statusText);
         }
-      })
-      .catch(() => {
-        setTemplates([
-          { id: 1, name: 'Advance Approved', status: 'Active', text: 'สวัสดีคุณ {name}, รายการขอเบิก {doc_ref} ได้รับการอนุมัติเรียบร้อยแล้วจำนวน {amount} บาท' },
-          { id: 2, name: 'Clearance Rejected', status: 'Active', text: 'สวัสดีคุณ {name}, รายการเคลียร์เงิน {doc_ref} ถูกปฏิเสธการอนุมัติเนื่องจากเอกสารไม่ครบถ้วน' },
-          { id: 3, name: 'Reminder: Overdue', status: 'Active', text: 'แจ้งเตือน: รายการขอเบิกเงิน {doc_ref} เกินกำหนดเวลาชำระเงินเคลียร์แล้ว กรุณาดำเนินการส่งรายงานเคลียร์เงินโดยเร็ว' }
-        ]);
-      });
+      } catch (e) {
+        console.error('Failed to load LINE settings', e);
+        toast("ไม่สามารถโหลดการตั้งค่า LINE ได้ โปรดตรวจสอบการเชื่อมต่อ", "err");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // Fetch config data
-    const fetchConfig = fetch('/api/store/line-config')
-      .then(res => res.json())
-      .then(data => {
-        if (data && typeof data === 'object' && !Array.isArray(data) && data.oaChannelId) {
-          setLineConfig(data);
-        }
-      })
-      .catch(() => {});
-
-    Promise.all([fetchTemplates, fetchConfig]).finally(() => setLoading(false));
+    fetchData();
   }, []);
 
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     try {
-      const res = await fetch('/api/store/line-config', {
+      const res = await fetch('/api/store/line-messaging-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(lineConfig)
       });
       if (res.ok) {
-        toast("🤖 บันทึกการเชื่อมต่อ LINE OA และการตั้งค่ากลุ่มเรียบร้อยแล้ว!", "ok");
+        toast("✅ บันทึกการเชื่อมต่อ LINE Messaging API เรียบร้อยแล้ว", "ok");
       } else {
         throw new Error();
       }
     } catch (e) {
-      toast("เกิดข้อผิดพลาดในการบันทึกค่าเชื่อมต่อ", "err");
+      toast("เกิดข้อผิดพลาดในการบันทึก", "err");
     } finally {
       setSavingConfig(false);
     }
   };
 
-  const handleSendTestGroup = () => {
-    if (!lineConfig.groupNotifyToken.trim()) {
-      toast("กรุณากรอกรหัส Token หรือ Webhook ของกลุ่ม LINE สำหรับส่งแจ้งเตือน", "err");
-      return;
-    }
-    setTestingGroup(true);
-    setTimeout(() => {
-      setTestingGroup(false);
-      toast(`💬 ส่งข้อความจำลองการขออนุมัติเอกสาร ไปยังกลุ่ม "${lineConfig.groupName}" สำเร็จ!`, "ok");
-    }, 1200);
+  const handleCopyWebhook = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    toast("คัดลอก Webhook URL แล้ว", "ok");
   };
 
-  const handleSaveTemplate = async () => {
-    if (!templateForm.text.trim()) {
-      toast("กรุณาระบุข้อความแจ้งเตือน", "err");
-      return;
-    }
-    const updated = templates.map(t => t.id === templateForm.id ? templateForm : t);
-    try {
-      const res = await fetch('/api/store/line-templates', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated)
-      });
-      if (res.ok) {
-        setTemplates(updated);
-        setTemplateForm(null);
-        toast("บันทึกเทมเพลต LINE สำเร็จ", "ok");
-      } else {
-        throw new Error();
-      }
-    } catch (e) {
-      toast("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "err");
-    }
-  };
-
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading LINE Configuration...</div>;
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-slate-500">
+        <RefreshCw className="animate-spin mx-auto mb-4 text-[#06C755]" size={36} />
+        <p className="font-medium font-noto">กำลังโหลดข้อมูล LINE Messaging API...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="animate-in fade-in duration-300">
-      {/* PAGE TITLE */}
-      <div className="mb-6 flex justify-between items-end">
+    <div className="animate-in fade-in duration-300 max-w-3xl">
+      <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <MessageCircle className="text-[#00B900]"/> App LINE Integration & Notifications
+            <span className="p-1.5 bg-[#06C755] rounded-lg text-white">
+              <MessageSquare size={22} />
+            </span>
+            LINE Messaging API
           </h2>
-          <p className="text-slate-500 text-sm mt-1">
-            เชื่อมต่อ LINE Official Account (บอทหลักระบบ) และ LINE Group (รับแจ้งเตือนขออนุมัติ) เพื่อขับเคลื่อน workflow แบบ Real-time
-          </p>
+          <p className="text-slate-500 text-sm mt-1">ตั้งค่าการแจ้งเตือนผ่านบัญชี LINE Official (Messaging API)</p>
         </div>
+        
         <button 
           onClick={handleSaveConfig} 
           disabled={savingConfig}
-          className="px-5 py-2.5 bg-gradient-to-r from-[#00B900] to-emerald-600 hover:from-[#009900] hover:to-emerald-700 font-bold text-white rounded-xl text-sm shadow-sm transition-all flex items-center gap-2"
+          className="px-5 py-2.5 bg-[#06C755] hover:bg-[#05a647] font-bold text-white rounded-xl text-xs shadow-sm transition-all flex items-center gap-2"
         >
-          {savingConfig ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+          {savingConfig ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
           บันทึกการเชื่อมต่อ LINE
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        {/* PANEL 1: LINE OFFICIAL ACCOUNT (MAIN BOT) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-[#00B900]/5 rounded-bl-full"></div>
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Bot className="text-[#00B900]" size={20} />
-                LINE Official Account (บอทหลักระบบ)
-              </h3>
-              <Badge type={lineConfig.oaStatus === 'CONNECTED' ? 'active' : 'inactive'}>
-                {lineConfig.oaStatus === 'CONNECTED' ? 'Connected' : 'Offline'}
-              </Badge>
-            </div>
-            
-            <p className="text-xs text-slate-500 mb-4 h-8">
-              หน้าต่างให้บริการพนักงาน (บอทหลักของระบบนี้) สำหรับตรวจสอบยอดคงเหลือ ถอนเคลียร์เงิน และประเมินใบงานผ่านทางเมนูริชเมนู
-            </p>
-
-            <div className="space-y-3 text-sm">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Channel ID</label>
-                <input 
-                  type="text" 
-                  value={lineConfig.oaChannelId} 
-                  onChange={e => setLineConfig({ ...lineConfig, oaChannelId: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:border-[#00B900] outline-none" 
-                  placeholder="200xxxxxxx"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Channel Secret</label>
-                <input 
-                  type="password" 
-                  value={lineConfig.oaChannelSecret} 
-                  onChange={e => setLineConfig({ ...lineConfig, oaChannelSecret: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:border-[#00B900] outline-none" 
-                  placeholder="e39da92xxxxxxxxxxxxxxxxxxxxx"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Channel Access Token</label>
-                <input 
-                  type="text" 
-                  value={lineConfig.oaAccessToken} 
-                  onChange={e => setLineConfig({ ...lineConfig, oaAccessToken: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:border-[#00B900] outline-none truncate" 
-                  placeholder="ya29.a0AR..."
-                />
-              </div>
-
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-2">
-                <span className="block text-[10px] font-bold text-slate-400">WEBHOOK URL (สำหรับผูกใน LINE Developer Console)</span>
-                <span className="text-[11px] font-mono text-[#009900] select-all break-all">{lineConfig.oaWebhookUrl}</span>
-              </div>
+      <div className="space-y-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <Settings2 className="text-[#06C755]" size={18} />
+              Channel Credentials
+            </h3>
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${lineConfig.channelAccessToken ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {lineConfig.channelAccessToken ? 'Configuration Ready' : 'Incomplete'}
+              </span>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-50 mt-4 flex justify-between items-center text-xs">
-            <span className="text-slate-400 flex items-center gap-1"><CheckCircle className="text-emerald-500" size={13} /> เชื่อมต่อ Rich Menu สำเร็จ</span>
-            <button 
-              onClick={() => {
-                setLineConfig({ ...lineConfig, oaStatus: lineConfig.oaStatus === 'CONNECTED' ? 'DISCONNECTED' : 'CONNECTED' });
-                toast("เปลี่ยนสถานะเชื่อมต่อ LINE OA เรียบร้อย", "ok");
-              }}
-              className="text-[#00B900] font-bold hover:underline"
-            >
-              แก้ไขการผูกมัดบอท
-            </button>
+          <div className="space-y-5">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1 uppercase">Channel ID</label>
+              <input 
+                type="text" 
+                value={lineConfig.channelId} 
+                onChange={e => setLineConfig({ ...lineConfig, channelId: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755]" 
+                placeholder="เช่น 2001234567"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1 uppercase">Channel Secret</label>
+              <input 
+                type="password" 
+                value={lineConfig.channelSecret} 
+                onChange={e => setLineConfig({ ...lineConfig, channelSecret: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755]" 
+                placeholder="••••••••••••••••••••••••••••••••"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Channel Access Token (Long-lived)</label>
+              <textarea 
+                rows={2}
+                value={lineConfig.channelAccessToken} 
+                onChange={e => setLineConfig({ ...lineConfig, channelAccessToken: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755]" 
+                placeholder="วาง Access Token จาก LINE Developers Console..."
+              />
+            </div>
           </div>
         </div>
 
-        {/* PANEL 2: LINE GROUP NOTIFICATIONS (FOR APPROVALS) */}
-        <div className="bg-white p-6 rounded-2xl border border-[#00B900]/20 shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full"></div>
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Bell className="text-amber-500" size={20} />
-                ช่องทางแจ้งเตือน: LINE Group (กลุ่มไลน์พิจารณาขออนุมัติ)
-              </h3>
-              <div className="flex items-center gap-1.5">
-                <input 
-                  type="checkbox" 
-                  id="group-enabled" 
-                  checked={lineConfig.groupEnabled} 
-                  onChange={e => setLineConfig({ ...lineConfig, groupEnabled: e.target.checked })}
-                  className="w-4 h-4 accent-[#00B900] cursor-pointer"
-                />
-                <label htmlFor="group-enabled" className="text-xs font-bold text-slate-500 cursor-pointer">เปิดใช้งาน</label>
-              </div>
-            </div>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <Bell className="text-[#06C755]" size={18} />
+              ตั้งค่าการแจ้งเตือน (Messaging API)
+            </h3>
+          </div>
 
-            <p className="text-xs text-slate-500 mb-4 h-8">
-              เมื่อพนักงานส่งคำขอเบิกเงินหรือเคลียร์เงิน ระบบจะทำการส่งข้อความพร้อมปุ่มอนุมัติด่วนเข้าไปยังไลน์กลุ่มนี้ เพื่อแจ้งให้คณะอนุมัติระดับสูงทราบทันที
-            </p>
-
-            <div className="space-y-4 text-sm mt-2">
+          <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">ชื่อกลุ่ม LINE ที่ต้องการเชื่อมโยง</label>
-                <input 
-                  type="text" 
-                  value={lineConfig.groupName} 
-                  onChange={e => setLineConfig({ ...lineConfig, groupName: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold focus:border-[#00B900] outline-none" 
-                  placeholder="เช่น LINE ผู้อนุมัติโครงการโครงสร้างขั้นพื้นฐาน"
-                />
+                <h4 className="text-xs font-bold text-slate-800">Automated Group Notifications</h4>
+                <p className="text-[10px] text-slate-500">ส่งข้อความอัตโนมัติเข้ากลุ่มเมื่อมีการอนุมัติรายการ</p>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1 flex justify-between">
-                  <span>LINE Group Token (หรือ Webhook URL)</span>
-                  <span className="text-[#00B900] font-bold cursor-pointer hover:underline text-[10px] flex items-center gap-0.5">
-                    <HelpCircle size={11} /> วิธีการเชื่อม LINE Notify โดนใจ
-                  </span>
-                </label>
-                <input 
-                  type="password" 
-                  value={lineConfig.groupNotifyToken} 
-                  onChange={e => setLineConfig({ ...lineConfig, groupNotifyToken: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono focus:border-[#00B900] outline-none" 
-                  placeholder="เช่น xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                />
-              </div>
-
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex gap-2 items-start text-xs text-amber-800">
-                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">สำคัญเกี่ยวกับการพิจารณา</p>
-                  <p className="text-[10px] mt-0.5 text-amber-700">ไลน์แจ้งเตือนจะใช้เบิกจ่ายกับเทมเพลตที่เปิดใช้งาน มอบความคล่องตัวในการตอบรับอนุมัติผ่านโทรศัพท์มือถือ</p>
-                </div>
+              <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-slate-200 cursor-pointer transition-colors"
+                onClick={() => setLineConfig(prev => ({ ...prev, automationEnabled: !prev.automationEnabled }))}>
+                <div className={`h-4 w-4 transform rounded-full bg-white transition-transform ${lineConfig.automationEnabled ? 'translate-x-4 bg-[#06C755]' : 'translate-x-1'}`} />
+                <div className={`absolute inset-0 rounded-full transition-colors ${lineConfig.automationEnabled ? 'bg-[#06C755]/20' : 'bg-transparent'}`} />
               </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 mt-4 flex justify-between items-center">
-            <span className="text-xs text-slate-400">สถานะกลุ่ม: <strong className="text-emerald-600 font-bold">พร้อมทำงาน (Ready)</strong></span>
-            <button 
-              onClick={handleSendTestGroup} 
-              disabled={testingGroup}
-              className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
-            >
-              {testingGroup ? <RefreshCw size={12} className="animate-spin" /> : null}
-              💬 ส่งแจ้งเตือนทดสอบเข้ากลุ่ม
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 3: TEMPLATES CONFIGURATION */}
-      <div className="mb-4">
-        <h3 className="font-bold text-slate-800 flex items-center gap-1.5 mb-2">
-          <Settings2 size={18} className="text-slate-600" />
-          Notification Templates (เทมเพลตส่งข้อความ LINE)
-        </h3>
-        <p className="text-xs text-slate-400">ปรับเปลี่ยนโครงรูปอักษรที่ระบบจะเลือกส่งไปยัง LINE Group หรือ LINE OA อัตโนมัติเมื่อข้อมูลเอกสารถูกพิจารณา</p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        {templates.map(tpl => (
-          <div 
-            key={tpl.id} 
-            onClick={() => setTemplateForm({ ...tpl })} 
-            className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-[#00B900] transition-colors cursor-pointer group flex flex-col justify-between text-left"
-          >
-             <div>
-               <div className="flex justify-between items-center mb-3">
-                 <span className="font-bold text-sm text-slate-700">{tpl.name}</span>
-                 <Badge type={tpl.status === 'Active' ? 'active' : 'inactive'}>{tpl.status}</Badge>
+          <div className="mt-5 space-y-5">
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+               <label className="block text-[11px] font-bold text-emerald-700 mb-1 uppercase tracking-wider flex items-center gap-1.5">
+                 <Target className="size-3.5" /> Target Group ID / Recipient ID
+               </label>
+               <input 
+                 type="text" 
+                 value={lineConfig.groupId} 
+                 onChange={e => setLineConfig({ ...lineConfig, groupId: e.target.value })}
+                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-xs font-mono outline-none focus:border-[#06C755] bg-white" 
+                 placeholder="เช่น C123456789... (สำหรับกลุ่ม) หรือ U123456... (สำหรับบุคคล)"
+               />
+               <div className="mt-3 space-y-2">
+                 <p className="text-[10px] text-emerald-800 font-bold flex items-center gap-1">
+                   <Info size={12} /> วิธีหา Group ID สำหรับส่งเข้ากลุ่ม:
+                 </p>
+                 <ul className="text-[10px] text-emerald-600 space-y-1 list-disc pl-4 leading-relaxed">
+                   <li>เชิญ Bot เข้าไปในกลุ่ม LINE ที่ต้องการ</li>
+                   <li>พิมพ์คำว่า <span className="font-bold border-b border-emerald-300 px-1 text-emerald-700 select-all font-mono">ID</span> ในแชทกลุ่มนั้น</li>
+                   <li>Bot จะตอบกลับด้วย ID ของกลุ่ม (เริ่มต้นด้วยตัว C) ให้นำมาวางในช่องด้านบน</li>
+                 </ul>
                </div>
-               <div className="bg-slate-50 p-3 rounded-xl text-xs text-slate-500 font-mono line-clamp-3 leading-relaxed">
-                 "{tpl.text}"
-               </div>
-             </div>
-             <p className="text-xs text-[#00B900] font-bold mt-3 text-right group-hover:underline flex items-center justify-end gap-1">
-               <Settings2 size={12} /> แก้ไขเทมเพลตข้อความ
-             </p>
-          </div>
-        ))}
-      </div>
+            </div>
 
-      {/* EDIT TEMPLATE MODAL */}
-      {templateForm && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setTemplateForm(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-[500px] flex flex-col animate-in zoom-in-95 text-left overflow-hidden">
-             <div className="p-5 border-b border-slate-100 flex justify-between bg-slate-50 items-center">
-               <div className="flex items-center gap-2">
-                 <Settings2 className="text-[#00B900]" size={20} />
-                 <h3 className="font-bold text-slate-800">Edit {templateForm.name}</h3>
-               </div>
-               <button onClick={() => setTemplateForm(null)} className="text-slate-400 hover:text-slate-700"><X size={20}/></button>
-             </div>
-
-             <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Status</label>
-                  <select value={templateForm.status} onChange={e => setTemplateForm({ ...templateForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Message Text Template</label>
-                  <textarea 
-                    value={templateForm.text} 
-                    onChange={e => setTemplateForm({ ...templateForm, text: e.target.value })} 
-                    rows={4}
-                    className="w-full px-3 py-2 border rounded-lg text-sm font-mono leading-relaxed" 
-                    placeholder="ใส่ข้อความแจ้งเตือนที่นี่..." 
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Available wildcards: <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-600 font-bold">{'{name}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded text-[#00B900] font-bold">{'{doc_ref}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-600 font-bold">{'{amount}'}</code></p>
-                </div>
-             </div>
-
-             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
-                <button onClick={() => setTemplateForm(null)} className="px-4 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-600 font-bold">Cancel</button>
-                <button onClick={handleSaveTemplate} className="px-5 py-2 bg-[#00B900] hover:bg-[#009900] text-white rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm transition-colors">
-                  <Save size={15}/> Save Template
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Webhook URL</span>
+                <button onClick={handleCopyWebhook} className="text-[#06C755] hover:text-[#05a647] flex items-center gap-1 text-[10px] font-bold">
+                  <Copy size={12} /> Copy URL
                 </button>
-             </div>
+              </div>
+              <div className="bg-white px-3 py-2 rounded-lg border border-slate-200 text-[10px] font-mono text-slate-600 break-all">
+                {webhookUrl}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2 flex items-start gap-1">
+                <Info size={12} className="shrink-0" />
+                <span>นำ URL นี้ไปกรอกในส่วน Webhook settings ของ LINE Developer Console และเปิดใช้งาน "Use webhook"</span>
+              </p>
+            </div>
+
+            <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[11px] font-bold text-blue-700 uppercase">Callback URL (Redirect URI)</span>
+                <button 
+                  onClick={() => {
+                    const url = `${window.location.origin.replace('http://', 'https://')}/api/auth/line/callback`;
+                    navigator.clipboard.writeText(url);
+                    toast('คัดลอก Callback URL แล้ว', 'success');
+                  }} 
+                  className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-[10px] font-bold"
+                >
+                  <Copy size={12} /> Copy URL
+                </button>
+              </div>
+              <div className="bg-white px-3 py-2 rounded-lg border border-blue-200 text-[10px] font-mono text-blue-600 break-all">
+                {window.location.origin.replace('http://', 'https://')}/api/auth/line/callback
+              </div>
+              <p className="text-[10px] text-blue-400 mt-2 flex items-start gap-1">
+                <Info size={12} className="shrink-0" />
+                <span>นำ URL นี้ไปใส่ใน LINE Developers {">"} LINE Login {">"} Callback URL เพื่อให้ล็อกอินได้ถูกต้อง</span>
+              </p>
+            </div>
           </div>
-         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

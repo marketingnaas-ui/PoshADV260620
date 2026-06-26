@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidStore(data) {
+      return data.keys().hasAll(['records'])
+        && data.records is list
+        && data.records.size() <= 10000;
+    }
+
+    function isValidState(data) {
+      return data.keys().hasAll(['advances', 'settings', 'running_numbers'])
+        && data.advances is list
+        && data.settings is map
+        && data.running_numbers is map;
+    }
+
+    // --- Collection Rules ---
+
+    // Generic store for master data, logs, etc.
+    match /clearadvanceStores/{storeId} {
+      allow read, write: if isValidId(storeId) 
+        && (request.resource == null || isValidStore(incoming()));
+    }
+
+    // Singleton document for global application state
+    match /clearadvanceApp/state {
+      allow read, write: if (request.resource == null || isValidState(incoming()));
+    }
+  }
+}

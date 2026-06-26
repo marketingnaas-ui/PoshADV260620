@@ -10,9 +10,9 @@ export const Reports = () => {
   const s = getStats(advances);
   
   const catColors: Record<string, string> = { 'ค่าแรง': '#4E958D', 'ค่าวัสดุ': '#3b82f6', 'ค่าเดินทาง': '#f59e0b', 'ค่าอุปกรณ์': '#8b5cf6', 'ค่าเช่า': '#ef4444', 'อื่นๆ': '#6b7280' };
-  const maxE = s.topE[0] ? s.topE[0][1].amt : 1;
-  const maxP = s.topP[0] ? s.topP[0][1].amt : 1;
-  const maxC = Math.max(...Object.values(s.catT).length ? Object.values(s.catT) : [0], 1);
+  const maxE = s.topE[0] ? Math.max(s.topE[0][1].amt, 1) : 1;
+  const maxP = s.topP[0] ? Math.max(s.topP[0][1].amt, 1) : 1;
+  const maxC = Math.max(...(Object.values(s.catT).length ? Object.values(s.catT) : [0]), 1);
 
   // Load accounting ledger transactions
   const [reviewTransactions, setReviewTransactions] = useState<AccountingTransaction[]>([]);
@@ -173,11 +173,11 @@ export const Reports = () => {
           <p>รายงานเชิงบริหาร และศูนย์รวมการดึงข้อมูลภาษีปิดสมุดรายวันทั่วไป (Symmetric ERP Interface)</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/accounting-ledger.csv'; }}>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/accounting-ledger.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>
             <FileSpreadsheet size={14} style={{ marginRight: '4px', display: 'inline' }} /> Export Accounting Excel (CSV)
           </button>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/advances.csv'; }}>? CSV Summary</button>
-          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = '/api/export/app-backup.json'; }}><Download size={14} /> Backup JSON</button>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/advances.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>? CSV Summary</button>
+          <button className="btn btn-o btn-sm" onClick={() => { window.location.href = `/api/export/app-backup.json?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}><Download size={14} /> Backup JSON</button>
           <button className="btn btn-o btn-sm" onClick={() => window.print()}>?? Audit PDF</button>
         </div>
       </div>
@@ -290,7 +290,7 @@ export const Reports = () => {
               บัญชีส่วนกลางรวบรวมข้อมูลใบเสนอเบิกเงินทดรองจ่าย, ทรานแซกชั่นการโอนเงินกองคลัง, บิลใบเสร็จใบกำกับภาษี (VAT) และการหัก ณ ที่จ่าย (WHT)
             </p>
           </div>
-          <button className="btn btn-sm" style={{ background: 'var(--p)', color: '#fff', fontWeight: 'bold' }} onClick={() => { window.location.href = '/api/export/accounting-ledger.csv'; }}>
+          <button className="btn btn-sm" style={{ background: 'var(--p)', color: '#fff', fontWeight: 'bold' }} onClick={() => { window.location.href = `/api/export/accounting-ledger.csv?token=${encodeURIComponent(localStorage.getItem('clear_advance_auth_token') || '')}`; }}>
             <Download size={12} style={{ marginRight: '4px', display: 'inline' }} /> Download Excel (CSV)
           </button>
         </div>

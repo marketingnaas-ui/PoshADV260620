@@ -66,9 +66,13 @@ export const ApprovalCenter = () => {
 
 
   // Filter lists
-  const pendingData = advances.filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'รออนุมัติ');
-  const transferData = advances.filter(r => (r.status === 'WAITING_TRANSFER' || r.status === 'รอโอน') && !r.pay && !r.tempSlip);
-  const historyData = advances.filter(r => r.status !== 'PENDING_APPROVAL' && r.status !== 'รออนุมัติ'); // Show all that have moved past first stage
+  const isPending = (s: string) => s === 'PENDING_APPROVAL' || s === 'รออนุมัติ';
+  const isTransferStatus = (s: string) => s === 'WAITING_TRANSFER' || s === 'รอโอน' || s === 'รอโอนเงิน' || s === 'รอโอนเงินทดรอง' || s === 'รอโอนเงินทดรองจ่าย';
+  const hasPayment = (r: any) => !!(r.pay && Object.keys(r.pay).length > 0) || !!r.tempSlip;
+
+  const pendingData = advances.filter(r => isPending(r.status));
+  const transferData = advances.filter(r => isTransferStatus(r.status) && !hasPayment(r));
+  const historyData = advances.filter(r => !isPending(r.status) && (!isTransferStatus(r.status) || hasPayment(r)));
 
   // Copy to clipboard helper
   const handleCopy = (text: string, id: string) => {
@@ -130,47 +134,26 @@ export const ApprovalCenter = () => {
             return;
           }
 
-          // Look up corresponding staff member by PIN
-          const matchedStaff = masterUsers.find(u => u.pin && u.pin.trim() === passwordValueVal.trim());
+          // Task 4: Verify PIN via backend
           let executorName = '';
           let matchedRoleName = '';
+          let matchedStaff: any = null;
 
-          if (matchedStaff) {
-            executorName = matchedStaff.name;
-            matchedRoleName = matchedStaff.role || matchedStaff.position || 'Staff';
-          } else {
-            // Try fallback group passwords
-            const isMasterPin = passwordValueVal.trim() === '1234';
-            let matchedRoleObj: any = null;
+          try {
+            const vres = await fetch('/api/auth/verify-pin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pin: passwordValueVal.trim() })
+            });
+            const vdata = await vres.json();
 
-            if (isMasterPin) {
-              matchedRoleObj = { name: 'Administrator' };
-            } else {
-              matchedRoleObj = dbRoles.find(role => {
-                const password = role.password || (
-                  role.id === 'R1' || role.name === 'Administrator' ? 'admin123' :
-                  role.id === 'R2' || role.name === 'Accounting' ? 'acc123' :
-                  role.id === 'R3' || role.name === 'Employee / Requester' ? 'emp123' : ''
-                );
-                return password && password.trim() === passwordValueVal.trim();
-              });
-              
-              if (!matchedRoleObj) {
-                const cleanPass = passwordValueVal.trim();
-                if (cleanPass === 'admin123') {
-                  matchedRoleObj = { name: 'Administrator' };
-                } else if (cleanPass === 'acc123') {
-                  matchedRoleObj = { name: 'Accounting' };
-                } else if (cleanPass === 'emp123') {
-                  matchedRoleObj = { name: 'Employee / Requester' };
-                }
-              }
+            if (vdata.success) {
+              executorName = vdata.user.name;
+              matchedRoleName = vdata.user.role;
+              matchedStaff = vdata.user;
             }
-
-            if (matchedRoleObj) {
-              executorName = `ผู้รับผิดชอบกลุ่ม (${matchedRoleObj.name})`;
-              matchedRoleName = matchedRoleObj.name;
-            }
+          } catch (err) {
+            console.error('PIN verification failed:', err);
           }
 
           if (executorName) {
@@ -269,12 +252,14 @@ export const ApprovalCenter = () => {
       });
 
       // 2. Update advance item on database with attached slip file info
+      const isTransferable = isTransferStatus(r.status);
       updateAdvance(advId, {
         tempSlip: {
           id: storedFile.id,
           url: storedFile.url,
           name: file.name
-        }
+        },
+        ...(isTransferable ? { status: 'WAITING_CLEARANCE' as any } : {})
       });
 
       setActiveTab('history');
@@ -415,13 +400,13 @@ export const ApprovalCenter = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', marginBottom: '24px', fontSize: '12px', border: '1px solid var(--bdr)', padding: '16px', borderRadius: '8px', background: '#fafbfc' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div><b>ชื่อผู้ขอเบิกเงิน:</b> {adv.empName}</div>
-            <div><b>ฝ่าย/หน่วยงาน:</b> {adv.empDept}</div>
-            <div><b>โครงการรับชำระ:</b> {adv.pName}</div>
-            <div><b>รายละเอียดหมายเหตุ:</b> {adv.desc}</div>
+            <div><b>ตำแหน่ง:</b> {adv.empDept}</div>
+            <div><b>โครงการ:</b> {adv.pName}</div>
+            <div><b>หมายเหตุ:</b> {adv.desc}</div>
           </div>
           <div style={{ textAlign: 'right', borderLeft: '1px solid var(--bdr)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div><b>วันที่ทำรายการ:</b> {fmtD(adv.reqDate)}</div>
-            <div><b>วันกำหนดเคลียร์เงิน:</b> {fmtD(adv.dueDate)}</div>
+            <div><b>กำหนดการเคลียร์เอกสาร:</b> {fmtD(adv.reqDate ? (() => { try { const d = new Date(adv.reqDate); if (!isNaN(d.getTime())) { d.setDate(d.getDate() + 30); return d.toISOString(); } } catch (e) {} return adv.dueDate; })() : adv.dueDate)}</div>
             {adv.appDate && <div><b>วันที่ผู้อนุมัติ:</b> {fmtD(adv.appDate)}</div>}
             <div><b>สถานะเบิกจ่าย:</b> {adv.status}</div>
           </div>
@@ -430,10 +415,10 @@ export const ApprovalCenter = () => {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginTop: '16px' }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '2.5px solid var(--bdr)' }}>
-              <th style={{ padding: '10px', textAlign: 'left' }}># รายละเอียดรายการที่นำเสนอเบิก</th>
+              <th style={{ padding: '10px', textAlign: 'left' }}>รายละเอียดรายการขออนุมัติ</th>
               <th style={{ padding: '10px', textAlign: 'right', width: '80px' }}>จำนวน</th>
-              <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อนาม</th>
-              <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ยอดรวมย่อย</th>
+              <th style={{ padding: '10px', textAlign: 'right', width: '100px' }}>ราคาต่อหน่วย</th>
+              <th style={{ padding: '10px', textAlign: 'right', width: '110px' }}>ราคารวม</th>
             </tr>
           </thead>
           <tbody>

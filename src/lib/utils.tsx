@@ -1,5 +1,11 @@
 import React, { ReactNode } from 'react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 import { Advance } from '../types';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export const fmt = (n?: number) => (n || 0).toLocaleString('th-TH');
 export const fmtM = (n?: number) => {
@@ -9,20 +15,25 @@ export const fmtM = (n?: number) => {
   return n.toLocaleString('th-TH');
 };
 export const fmtD = (s?: string | null) => s ? new Date(s).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '–';
-export const now = () => new Date('2026-06-17');
+export const now = () => new Date();
 
-export const overdue = (r: Advance) => r.status === 'WAITING_CLEARANCE' && r.dueDate && new Date(r.dueDate) < now();
+export const overdue = (r: Advance) => (r.status === 'WAITING_CLEARANCE' || r.status === 'DRAFT_CLEARANCE') && r.dueDate && new Date(r.dueDate) < now();
 
 export const SM: Record<string, { l: string; c: string }> = {
   PENDING_APPROVAL: { l: 'รออนุมัติ', c: 'bp' },
   WAITING_TRANSFER: { l: 'รอโอน', c: 'bt' },
   WAITING_CLEARANCE: { l: 'รอเคลียร์', c: 'bc2' },
+  CLEARED_BY_EMPLOYEE: { l: 'รอตรวจสอบ', c: 'by' },
   CLOSED: { l: 'ปิดยอด', c: 'bk' },
   REJECTED: { l: 'ไม่อนุมัติ', c: 'br' },
   'บันทึกร่าง': { l: 'บันทึกร่าง', c: 'bg' },
   'รออนุมัติ': { l: 'รออนุมัติ', c: 'bp' },
   'DRAFT': { l: 'บันทึกร่าง', c: 'bg' },
-  'รอเคลียร์ยอด': { l: 'รอเคลียร์ยอด', c: 'bc2' }
+  'DRAFT_CLEARANCE': { l: 'บันทึกร่างเคลียร์', c: 'bg' },
+  'รอเคลียร์ยอด': { l: 'รอเคลียร์', c: 'bc2' },
+  PARTIAL_CLEARANCE: { l: 'บันทึกเคลียร์บางส่วน', c: 'ba' },
+  WAITING_PHYSICAL_DOCS: { l: 'รอเอกสารตัวจริง', c: 'bd' },
+  RETURNED: { l: 'เอกสารตีกลับ', c: 'br' }
 };
 
 export const SBadge = ({ status, date }: { status: string; date?: string }) => {
@@ -57,13 +68,12 @@ export const generateAdvanceId = (existingAdvances: { id: string }[], existingId
   const matched = existingAdvances.filter(a => a.id && a.id.startsWith(prefix));
   let nextNum = 1;
   if (matched.length > 0) {
-    const lastItem = matched[matched.length - 1];
-    const parts = lastItem.id.split('-');
-    if (parts.length === 3) {
-      const lastNumStr = parts[2];
-      const lastNum = parseInt(lastNumStr, 10);
-      nextNum = isNaN(lastNum) ? 1 : lastNum + 1;
-    }
+    const numbers = matched.map(a => {
+      const parts = a.id.split('-');
+      return parts.length === 3 ? parseInt(parts[2], 10) : 0;
+    });
+    const maxNum = Math.max(...numbers.filter(n => !isNaN(n)));
+    nextNum = maxNum + 1;
   }
   const suffix = String(nextNum).padStart(3, '0');
   return prefix + suffix;
@@ -78,25 +88,53 @@ export const generateClearanceId = (existingAdvances: { clrs?: { id: string }[] 
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yymm = yy + mm;
   const prefix = `CLR-${yymm}-`;
-  const allClrs: string[] = [];
+  let nextNum = 1;
+  const allClrs: number[] = [];
   existingAdvances.forEach(adv => {
     if (adv.clrs) {
       adv.clrs.forEach(clr => {
         if (clr.id && clr.id.startsWith(prefix)) {
-          allClrs.push(clr.id);
+          const parts = clr.id.split('-');
+          if (parts.length === 3) {
+            const num = parseInt(parts[2], 10);
+            if (!isNaN(num)) allClrs.push(num);
+          }
         }
       });
     }
   });
-  let nextNum = 1;
+
   if (allClrs.length > 0) {
-    const lastItem = allClrs[allClrs.length - 1];
-    const parts = lastItem.split('-');
-    if (parts.length === 3) {
-      const lastNumStr = parts[2];
-      const lastNum = parseInt(lastNumStr, 10);
-      nextNum = isNaN(lastNum) ? 1 : lastNum + 1;
+    nextNum = Math.max(...allClrs) + 1;
+  }
+  const suffix = String(nextNum).padStart(3, '0');
+  return prefix + suffix;
+};
+
+export const generateSummaryReportId = (existingAdvances: { ravNo?: string; id?: string }[], existingId?: string) => {
+  if (existingId && existingId.startsWith('RAV-') && !existingId.includes('DRAFT') && existingId.split('-').length === 3) {
+    return existingId;
+  }
+  const d = now();
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yymm = yy + mm;
+  const prefix = `RAV-${yymm}-`;
+  
+  let nextNum = 1;
+  const allRavs: number[] = [];
+  existingAdvances.forEach(adv => {
+    if (adv.ravNo && adv.ravNo.startsWith(prefix)) {
+      const parts = adv.ravNo.split('-');
+      if (parts.length === 3) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num)) allRavs.push(num);
+      }
     }
+  });
+
+  if (allRavs.length > 0) {
+    nextNum = Math.max(...allRavs) + 1;
   }
   const suffix = String(nextNum).padStart(3, '0');
   return prefix + suffix;

@@ -6,7 +6,7 @@ import { Toggle } from './shared';
 export default function AiControlCenter() {
   const { toast } = useApp();
   const [loading, setLoading] = useState(true);
-  const [aiConfig, setAiConfig] = useState({ ocr: true, duplicate: true, fakeSlip: true, threshold: 85, engine: 'Gemini 1.5 Pro' });
+  const [aiConfig, setAiConfig] = useState({ ocr: true, duplicate: true, fakeSlip: true, threshold: 85, engine: 'Gemini 3.5 Flash' });
 
   useEffect(() => {
     fetch('/api/store/ai-config')
@@ -50,7 +50,7 @@ export default function AiControlCenter() {
         <div className="col-span-2 space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
             <div><h3 className="font-bold text-slate-800">OCR Engine</h3><p className="text-xs text-slate-500">โมเดลที่ใช้ดึงข้อมูลจากเอกสาร</p></div>
-            <select value={aiConfig.engine} onChange={e => setAiConfig({...aiConfig, engine: e.target.value})} className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-slate-50 font-medium text-purple-700 outline-none"><option>Gemini 1.5 Pro</option><option>OpenAI GPT-4o</option><option>Azure Form Recognizer</option></select>
+            <select value={aiConfig.engine} onChange={e => setAiConfig({...aiConfig, engine: e.target.value})} className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-slate-50 font-medium text-purple-700 outline-none"><option>Gemini 3.5 Flash</option><option>Gemini 3.1 Pro</option><option>OpenAI GPT-4o</option><option>Azure Form Recognizer</option></select>
           </div>
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">
             <div className="pr-8"><h3 className="font-bold text-slate-800 mb-1 flex items-center gap-2"><Fingerprint size={16} className="text-indigo-500"/> Duplicate Detection</h3><p className="text-xs text-slate-500">เช็กความสอดคล้องไฟล์ด้วย File Hash และ Perceptual Hash ป้องกันการนำสลิปเดิมมาเบิกซ้ำ</p></div>

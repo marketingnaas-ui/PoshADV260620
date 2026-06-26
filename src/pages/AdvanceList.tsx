@@ -1,12 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { fmt, fmtD, SBadge, UserAvt } from '../lib/utils';
 import { AdvanceDetailView } from '../components/AdvanceDetailView';
+import { SmartFilter } from '../components/SmartFilter';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export const AdvanceList = () => {
   const { advances, setPage, openDrawer } = useApp();
-  const [listF, setListF] = React.useState('');
+  const [listF, setListF] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+  const [projectF, setProjectF] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const sortedData = useMemo(() => {
+    return [...advances].sort((a, b) => new Date(a.reqDate).getTime() - new Date(b.reqDate).getTime());
+  }, [advances]);
 
   const matchStatus = (status: string, filterStr: string): boolean => {
     if (!filterStr) return true;
@@ -14,17 +22,35 @@ export const AdvanceList = () => {
     const f = String(filterStr || '').toUpperCase();
     if (f === 'PENDING_APPROVAL') return s === 'PENDING_APPROVAL' || s === 'รออนุมัติ';
     if (f === 'WAITING_TRANSFER') return s === 'WAITING_TRANSFER' || s === 'รอโอน' || s === 'รอโอนเงิน';
-    if (f === 'WAITING_CLEARANCE') return s === 'WAITING_CLEARANCE' || s === 'รอเคลียร์' || s === 'รอเคลียร์ยอด';
+    if (f === 'WAITING_CLEARANCE') return ['WAITING_CLEARANCE', 'CLEARED_BY_EMPLOYEE', 'PARTIAL_CLEARANCE', 'WAITING_PHYSICAL_DOCS'].includes(s) || s === 'รอเคลียร์' || s === 'รอเคลียร์ยอด';
     if (f === 'CLOSED') return s === 'CLOSED' || s === 'ปิดยอด';
     if (f === 'REJECTED') return s === 'REJECTED' || s === 'ไม่อนุมัติ' || s === 'ปฏิเสธ';
-    if (f === 'DRAFT') return s === 'DRAFT' || s === 'บันทึกร่าง' || s === 'แบบร่าง';
+    if (f === 'DRAFT') return s === 'DRAFT' || s === 'บันทึกร่าง' || s === 'แบบร่าง' || s === 'DRAFT_CLEARANCE';
     return s === f || (status || '').toLowerCase() === filterStr.toLowerCase();
   };
 
-  const data = listF ? advances.filter(r => matchStatus(r.status, listF)) : advances;
+  const data = sortedData.filter(r => {
+    if (listF && !matchStatus(r.status, listF)) return false;
+    if (projectF && (!r.pIds || !r.pIds.includes(projectF))) return false;
+    if (searchQ) {
+       const q = searchQ.toLowerCase();
+       if (!r.id.toLowerCase().includes(q) && !r.empName.toLowerCase().includes(q) && !(r.pName||'').toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  const isAllSelected = data.length > 0 && selectedIds.length === data.length;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) setSelectedIds([]);
+    else setSelectedIds(data.map(r => r.id));
+  };
 
   const kpi = useMemo(() => {
-    const totalOut = advances.reduce((sum, r) => sum + Math.max(0, r.amount - (r.clrAmount || 0)), 0);
+    const totalOut = advances.reduce((sum, r) => sum + (r.amount - (r.clrAmount || 0)), 0);
     const overdue = advances.filter(r => r.status !== 'CLOSED' && r.status !== 'ปิดยอด' && new Date(r.dueDate) < new Date()).length;
     return { totalOut, overdue };
   }, [advances]);
@@ -32,7 +58,7 @@ export const AdvanceList = () => {
   const topRequester = useMemo(() => {
     const map = new Map<string, number>();
     advances.forEach(r => {
-      const out = Math.max(0, r.amount - (r.clrAmount || 0));
+      const out = r.amount - (r.clrAmount || 0);
       map.set(r.empName, (map.get(r.empName) || 0) + out);
     });
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -41,7 +67,7 @@ export const AdvanceList = () => {
   const projectFloating = useMemo(() => {
     const map = new Map<string, number>();
     advances.forEach(r => {
-      const out = Math.max(0, r.amount - (r.clrAmount || 0));
+      const out = r.amount - (r.clrAmount || 0);
       map.set(r.pName, (map.get(r.pName) || 0) + out);
     });
     return Array.from(map.entries()).map(([name, val]) => ({ name, val }));
@@ -59,9 +85,14 @@ export const AdvanceList = () => {
 
   const tabs = [
     { f: '', l: 'ทั้งหมด', n: advances.length, col: 'var(--p)' },
+    { f: 'DRAFT', l: 'บันทึกร่าง', n: advances.filter(r => matchStatus(r.status, 'DRAFT') || matchStatus(r.status, 'DRAFT_CLEARANCE')).length, col: '#94a3b8' },
     { f: 'PENDING_APPROVAL', l: 'รออนุมัติ', n: advances.filter(r => matchStatus(r.status, 'PENDING_APPROVAL')).length, col: '#f59e0b' },
     { f: 'WAITING_TRANSFER', l: 'รอโอน', n: advances.filter(r => matchStatus(r.status, 'WAITING_TRANSFER')).length, col: '#3b82f6' },
-    { f: 'WAITING_CLEARANCE', l: 'รอเคลียร์', n: advances.filter(r => matchStatus(r.status, 'WAITING_CLEARANCE')).length, col: '#8b5cf6' }
+    { f: 'WAITING_CLEARANCE', l: 'รอเคลียร์', n: advances.filter(r => matchStatus(r.status, 'WAITING_CLEARANCE')).length, col: '#8b5cf6' },
+    { f: 'PARTIAL_CLEARANCE', l: 'บันทึกเคลียร์บางส่วน', n: advances.filter(r => matchStatus(r.status, 'PARTIAL_CLEARANCE')).length, col: '#3b82f6' },
+    { f: 'WAITING_PHYSICAL_DOCS', l: 'รอเอกสารตัวจริง', n: advances.filter(r => matchStatus(r.status, 'WAITING_PHYSICAL_DOCS')).length, col: '#8b5cf6' },
+    { f: 'CLOSED', l: 'ปิดยอด', n: advances.filter(r => matchStatus(r.status, 'CLOSED')).length, col: '#10b981' },
+    { f: 'RETURNED', l: 'เอกสารตีกลับ', n: advances.filter(r => matchStatus(r.status, 'RETURNED')).length, col: '#ef4444' }
   ];
 
   const cellStyle = (width: string, isRight = false): React.CSSProperties => ({
@@ -126,10 +157,29 @@ export const AdvanceList = () => {
         ))}
       </div>
 
+      <SmartFilter
+        searchQuery={searchQ}
+        onSearchChange={setSearchQ}
+        projectFilter={projectF}
+        onProjectChange={setProjectF}
+        onClear={() => { setSearchQ(''); setProjectF(''); setListF(''); }}
+        hideStatus={true}
+      />
+
+      {selectedIds.length > 0 && (
+        <div style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600 }}>เลือกแล้ว {selectedIds.length} รายการ:</span>
+          <button className="btn btn-sm" style={{ background: '#ef4444', color: '#fff' }} onClick={() => { setSelectedIds([]); }}>🗑 ลบ</button>
+          <button className="btn btn-sm" style={{ background: '#3b82f6', color: '#fff' }} onClick={() => {}}>📂 Export</button>
+          <button className="btn btn-sm" style={{ background: '#64748b', color: '#fff' }} onClick={() => {}}>🖨 พิมพ์</button>
+        </div>
+      )}
+
       <div className="tw" style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
-        <table className="dt" style={{ tableLayout: 'fixed', width: '2000px', minWidth: '2000px', borderCollapse: 'collapse' }}>
+        <table className="dt" style={{ tableLayout: 'fixed', width: '2040px', minWidth: '2040px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ height: '46px' }}>
+              <th style={cellStyle('40px')}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={isAllSelected} onChange={toggleSelectAll} /></th>
               <th style={cellStyle('130px')}>Status</th>
               <th style={cellStyle('130px')}>ADV_No</th>
               <th style={cellStyle('110px')}>Request_Date</th>
@@ -147,12 +197,13 @@ export const AdvanceList = () => {
             </tr>
           </thead>
           <tbody>
-            {[...data].reverse().map(r => {
+            {data.map(r => {
               const { sourceBank, sourceAccName, sourceAccNo, recipientBank, recipientAccNo } = getBankDetails(r);
               return (
                 <tr key={r.id} onClick={() => handleOpenAdv(r.id)} style={{ cursor: 'pointer', height: '46px' }}>
+                  <td style={cellStyle('40px')} onClick={(e) => e.stopPropagation()}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                   <td style={cellStyle('130px')}><SBadge status={r.status} date={r.dueDate} /></td>
-                  <td style={cellStyle('130px')}><span className="dn">{r.id}</span></td>
+                  <td style={cellStyle('130px')}><span className="dn">{r.id && r.id.includes('-') ? `${r.id.split('-').slice(0, 2).join('-')}-${String(parseInt(r.id.split('-')[2] || '0', 10)).padStart(3, '0')}` : r.id}</span></td>
                   <td style={{ ...cellStyle('110px'), fontSize: '12px', color: 'var(--ts)' }}>{fmtD(r.reqDate)}</td>
                   <td style={{ ...cellStyle('110px'), fontSize: '12px', color: 'var(--ts)' }}>{fmtD(r.dueDate)}</td>
                   <td style={cellStyle('160px')}>
@@ -169,8 +220,8 @@ export const AdvanceList = () => {
                   <td style={{ ...cellStyle('150px'), fontFamily: 'monospace' }}>{recipientAccNo}</td>
                   <td style={{ ...cellStyle('140px', true), fontWeight: 700 }}>฿{fmt(r.amount)}</td>
                   <td style={{ ...cellStyle('140px', true), fontWeight: 700, color: 'var(--ok)' }}>฿{fmt(r.clrAmount || 0)}</td>
-                  <td style={{ ...cellStyle('160px', true), fontWeight: 700, color: (r.amount - (r.clrAmount || 0)) > 0 ? 'var(--err)' : 'inherit' }}>
-                    ฿{fmt(Math.max(0, r.amount - (r.clrAmount || 0)))}
+                  <td style={{ ...cellStyle('160px', true), fontWeight: 700, color: (r.amount - (r.clrAmount || 0)) > 0 ? 'var(--err)' : 'var(--ok)' }}>
+                    ฿{fmt(r.amount - (r.clrAmount || 0))}
                   </td>
                 </tr>
               );

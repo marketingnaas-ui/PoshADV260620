@@ -1,12 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { fmt, fmtD, SBadge } from '../lib/utils';
 import { AdvanceDetailView } from '../components/AdvanceDetailView';
+import { SmartFilter } from '../components/SmartFilter';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 
 export const ClearingList = () => {
   const { advances, setPage, openDrawer } = useApp();
-  const [listF, setListF] = React.useState('');
+  const [listF, setListF] = useState('');
+  const [searchQ, setSearchQ] = useState('');
 
   const allClearances = useMemo(() => {
     const list: any[] = [];
@@ -128,13 +130,40 @@ export const ClearingList = () => {
     return Array.from(map.entries()).map(([date, val]) => ({ date: fmtD(date), val })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [allClearances]);
 
-  const filtered = listF ? allClearances.filter(c => c.status === listF) : allClearances;
-
+  const filtered = allClearances.filter(c => {
+    if (listF) {
+      if (listF === 'WAITING_CLEARANCE') {
+        if (!['WAITING_CLEARANCE', 'CLEARED_BY_EMPLOYEE', 'PARTIAL_CLEARANCE', 'WAITING_PHYSICAL_DOCS'].includes(c.status || '')) return false;
+      } else if (c.status !== listF) {
+        return false;
+      }
+    }
+    if (searchQ) {
+       const q = searchQ.toLowerCase();
+       if (!c.clrNo.toLowerCase().includes(q) && !c.refAdvNo.toLowerCase().includes(q) && !c.vendorName.toLowerCase().includes(q) && !c.itemDescription.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  
   const tabs = [
     { f: '', l: 'ทั้งหมด', n: allClearances.length, col: 'var(--p)' },
-    { f: 'WAITING_CLEARANCE', l: 'รอตรวจเคลียร์', n: allClearances.filter(c => c.status === 'WAITING_CLEARANCE').length, col: '#8b5cf6' },
+    { f: 'WAITING_CLEARANCE', l: 'รอตรวจเคลียร์', n: allClearances.filter(c => ['WAITING_CLEARANCE', 'CLEARED_BY_EMPLOYEE', 'PARTIAL_CLEARANCE', 'WAITING_PHYSICAL_DOCS'].includes(c.status || '')).length, col: '#8b5cf6' },
     { f: 'CLOSED', l: 'ปิดยอดแล้ว', n: allClearances.filter(c => c.status === 'CLOSED').length, col: '#10b981' }
   ];
+  const sortedFiltered = useMemo(() => {
+     return [...filtered].sort((a, b) => new Date(b.itemDate).getTime() - new Date(a.itemDate).getTime());
+  }, [filtered]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const isAllSelected = sortedFiltered.length > 0 && selectedIds.length === sortedFiltered.length;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) setSelectedIds([]);
+    else setSelectedIds(sortedFiltered.map(c => c.uniqKey));
+  };
 
   const cellStyle = (width: string, isRight = false): React.CSSProperties => ({
     width,
@@ -155,7 +184,7 @@ export const ClearingList = () => {
   };
 
   const handleOpenClearingItem = (c: any) => {
-    const isReady = c.status === 'WAITING_CLEARANCE';
+    const isReady = c.status === 'WAITING_CLEARANCE' || c.status === 'DRAFT_CLEARANCE';
     openDrawer(
       <AdvanceDetailView.Header id={c.refAdvNo} />,
       <AdvanceDetailView.Body id={c.refAdvNo} />,
@@ -231,10 +260,27 @@ export const ClearingList = () => {
         ))}
       </div>
 
+      <SmartFilter
+        searchQuery={searchQ}
+        onSearchChange={setSearchQ}
+        onClear={() => { setSearchQ(''); setListF(''); }}
+        hideStatus={true}
+      />
+
+      {selectedIds.length > 0 && (
+        <div style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600 }}>เลือกแล้ว {selectedIds.length} รายการ:</span>
+          <button className="btn btn-sm" style={{ background: '#ef4444', color: '#fff' }} onClick={() => { setSelectedIds([]); }}>🗑 ลบ</button>
+          <button className="btn btn-sm" style={{ background: '#3b82f6', color: '#fff' }} onClick={() => {}}>📂 Export</button>
+          <button className="btn btn-sm" style={{ background: '#64748b', color: '#fff' }} onClick={() => {}}>🖨 พิมพ์</button>
+        </div>
+      )}
+
       <div className="tw" style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
-        <table className="dt" style={{ tableLayout: 'fixed', width: '2000px', minWidth: '2000px', borderCollapse: 'collapse' }}>
+        <table className="dt" style={{ tableLayout: 'fixed', width: '2040px', minWidth: '2040px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ height: '46px' }}>
+              <th style={cellStyle('40px')}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={isAllSelected} onChange={toggleSelectAll} /></th>
               <th style={cellStyle('130px')}>Status</th>
               <th style={cellStyle('130px')}>CLR_No</th>
               <th style={cellStyle('130px')}>Ref_ADV_No</th>
@@ -252,9 +298,10 @@ export const ClearingList = () => {
             </tr>
           </thead>
           <tbody>
-            {filtered.length > 0 ? (
-              [...filtered].reverse().map(c => (
+            {sortedFiltered.length > 0 ? (
+              sortedFiltered.map(c => (
                 <tr key={c.uniqKey} onClick={() => handleOpenClearingItem(c)} style={{ cursor: 'pointer', height: '46px' }}>
+                  <td style={cellStyle('40px')} onClick={(e) => e.stopPropagation()}><input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked={selectedIds.includes(c.uniqKey)} onChange={() => toggleSelect(c.uniqKey)} /></td>
                   <td style={cellStyle('130px')}>
                     <SBadge status={c.status} date={c.dueDate} />
                     {!c.isAiScanned && (
@@ -262,14 +309,14 @@ export const ClearingList = () => {
                     )}
                   </td>
                   <td style={cellStyle('130px')}><span className="tag" style={{ background: '#e0f2fe', color: '#0369a1' }}>{c.clrNo}</span></td>
-                  <td style={cellStyle('130px')}><span className="dn">{c.refAdvNo}</span></td>
+                  <td style={cellStyle('130px')}><span className="dn">{c.refAdvNo && c.refAdvNo.includes('-') ? `${c.refAdvNo.split('-').slice(0, 2).join('-')}-${String(parseInt(c.refAdvNo.split('-')[2] || '0', 10)).padStart(3, '0')}` : c.refAdvNo}</span></td>
                   <td style={{ ...cellStyle('110px'), fontSize: '12px', color: 'var(--ts)' }}>{fmtD(c.itemDate)}</td>
                   <td style={cellStyle('160px')}>{c.vendorName}</td>
                   <td style={{ ...cellStyle('150px'), fontFamily: 'monospace' }}>{cleanText(c.taxId)}</td>
                   <td style={cellStyle('130px')}>{c.receiptNo}</td>
                   <td style={cellStyle('130px')}>{c.invoiceNo}</td>
                   <td style={cellStyle('220px')}>{c.itemDescription}</td>
-                  <td style={{ ...cellStyle('120px', true), fontWeight: 700 }}>฿{fmt(c.amountNet)}</td>
+                   <td style={{ ...cellStyle('120px', true), fontWeight: 700 }}>฿{fmt(c.amountNet)}</td>
                   <td style={{ ...cellStyle('110px', true), fontWeight: 700, color: 'var(--tm)' }}>฿{fmt(c.vatAmount)}</td>
                   <td style={{ ...cellStyle('120px', true), fontWeight: 700, color: 'var(--tm)' }}>฿{fmt(c.discountAmount)}</td>
                   <td style={{ ...cellStyle('110px', true), fontWeight: 700, color: 'var(--tm)' }}>฿{fmt(c.otherCost)}</td>
